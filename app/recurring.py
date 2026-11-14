@@ -24,6 +24,7 @@ STOPPED_AFTER_PERIODS = 1.5
 class Charge:
     posted_on: date
     amount_cents: int  # positive = money spent
+    account: str = ""
 
 
 @dataclass
@@ -31,6 +32,10 @@ class Subscription:
     merchant: str
     cadence: str
     charges: list[Charge]  # oldest first
+
+    @property
+    def accounts(self) -> list[str]:
+        return sorted({charge.account for charge in self.charges if charge.account})
 
     @property
     def period_days(self) -> float:

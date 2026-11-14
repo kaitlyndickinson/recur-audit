@@ -27,7 +27,29 @@ python -m venv .venv
 HOUSEHOLD_DEV_USER=you@example.com .venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-To try it with fake data, run `python scripts/make_demo_data.py` and import `data/demo/demo-card.csv`. Set `HOUSEHOLD_DATA_DIR=data/demo` to keep the demo database separate from the real one.
+On Windows PowerShell, set the variables first: `$env:HOUSEHOLD_DEV_USER="you@example.com"; .venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000`.
+
+### Demo data
+
+`python scripts/make_demo_data.py` writes synthetic exports to `data/demo/`. Set `HOUSEHOLD_DATA_DIR=data/demo` to keep the demo database separate from the real one.
+
+| File | Import as | Shows |
+|---|---|---|
+| `demo-card.csv` | you, account "Card" | Subscriptions, a price increase, one that stopped, a yearly charge |
+| `demo-card-recent.csv` | you, account "Card" | A later download of the same card: every row is skipped as already imported |
+| `demo-checking.csv` | you, account "Checking" | Debit/credit columns; rent to mark "Not a subscription"; an electric bill too variable to count |
+| `demo-partner.ofx` | a second person | OFX import, and that each person only sees their own data |
+
+### Trying it as two people
+
+Locally, `HOUSEHOLD_DEV_USER` decides who you are. Run two servers on the same data, one per person, and open each in its own tab:
+
+```sh
+HOUSEHOLD_DATA_DIR=data/demo HOUSEHOLD_DEV_USER=you@example.com .venv/Scripts/uvicorn app.main:app --port 8000
+HOUSEHOLD_DATA_DIR=data/demo HOUSEHOLD_DEV_USER=partner@example.com .venv/Scripts/uvicorn app.main:app --port 8001
+```
+
+On the server there's no env var: each request carries the Tailscale login of whoever's device sent it.
 
 ### On the server
 

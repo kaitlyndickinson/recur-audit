@@ -1,4 +1,9 @@
 {% extends "base.html" %}
+{% macro dash_url(period, account) %}/?period={{ period }}{% if account %}&amp;account={{ account | urlencode }}{% endif %}{% endmacro %}
+{% macro pill(url, current, label) %}
+  <a href="{{ url }}" hx-get="{{ url }}" hx-target="#subs" hx-select="#subs" hx-swap="outerHTML" hx-push-url="true"
+     {% if current %}aria-current="true"{% endif %}>{{ label }}</a>
+{% endmacro %}
 {% block content %}
 {% if not has_data %}
   <section class="empty">
@@ -10,11 +15,14 @@
 <div id="subs">
   <div class="dash-head">
     <h1 class="visually-hidden">Subscriptions</h1>
-    <nav class="periods" aria-label="Time period">
-      {% for key, (label, _) in periods.items() %}
-        <a href="/?period={{ key }}" hx-get="/?period={{ key }}" hx-target="#subs" hx-select="#subs" hx-swap="outerHTML"
-           hx-push-url="true" {% if key == period %}aria-current="true"{% endif %}>{{ label }}</a>
-      {% endfor %}
+    {% if accounts | length > 1 %}
+      <nav class="pills" aria-label="Account">
+        {{ pill(dash_url(period, ""), not account, "All accounts") }}
+        {% for name in accounts %}{{ pill(dash_url(period, name), name == account, name) }}{% endfor %}
+      </nav>
+    {% endif %}
+    <nav class="pills" aria-label="Time period">
+      {% for key, (label, _) in periods.items() %}{{ pill(dash_url(key, account), key == period, label) }}{% endfor %}
     </nav>
   </div>
 
@@ -79,7 +87,7 @@
             <a class="sub-main" href="/merchant?name={{ sub.merchant | urlencode }}">
               <span class="sub-name">{{ sub.merchant }}</span>
               <span class="sub-meta">
-                {{ sub.cadence | capitalize }} · {{ sub.latest_cents | money }}
+                {{ sub.accounts | join(", ") }} · {{ sub.cadence | capitalize }} · {{ sub.latest_cents | money }}
                 {% if sub.is_stopped(today) %}
                   · <span class="badge quiet">No charge since {{ sub.last_charged | day }}</span>
                 {% else %}
@@ -97,13 +105,13 @@
             <div class="sub-actions">
               {% if status == "review" %}
                 {% for value, text in [("keep", "Keep"), ("cancel", "Cancel"), ("not_subscription", "Not a subscription")] %}
-                  <button class="chip" hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "status": "{{ value }}", "period": "{{ period }}"}'
+                  <button class="chip" hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "status": "{{ value }}", "period": "{{ period }}", "account": {{ account | tojson }}}'
                           hx-target="#subs" hx-select="#subs" hx-swap="outerHTML">{{ text }}</button>
                 {% endfor %}
               {% else %}
                 <label class="visually-hidden" for="status-{{ loop.index }}-{{ status }}">Status for {{ sub.merchant }}</label>
                 <select class="chip select" id="status-{{ loop.index }}-{{ status }}" name="status"
-                        hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "period": "{{ period }}"}'
+                        hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "period": "{{ period }}", "account": {{ account | tojson }}}'
                         hx-target="#subs" hx-select="#subs" hx-swap="outerHTML">
                   {% for value, text in statuses.items() %}
                     <option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ text }}</option>

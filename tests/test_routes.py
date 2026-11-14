@@ -201,3 +201,36 @@ def test_deleting_keeps_the_stored_file_when_someone_else_imported_it_too(client
     delete_import(client, import_id(client))
     assert list((tmp_path / "raw").iterdir())
     assert "Streamflix" in client.get("/", headers=PARTNER).text
+
+
+def upload_two_accounts(client):
+    upload(client, monthly_csv(range(1, 7)), account="Card")
+    upload(client, monthly_csv(range(1, 7), description="ACH DEBIT ACME GYM", amount="-30.00"), account="Checking", name="b.csv")
+
+
+def test_each_subscription_shows_its_account(client):
+    upload_two_accounts(client)
+    page = visible_text(client.get("/", headers=ME).text)
+    assert "Streamflix Card · Monthly" in page
+    assert "Acme Gym Checking · Monthly" in page
+
+
+def test_account_filter_limits_the_dashboard(client):
+    upload_two_accounts(client)
+    page = client.get("/", params={"account": "Checking"}, headers=ME).text
+    assert "Acme Gym" in page
+    assert "Streamflix" not in page
+    assert "$180.00" in visible_text(page)  # 6 x 30.00, with no card spending mixed in
+
+
+def test_unknown_account_shows_everything(client):
+    upload_two_accounts(client)
+    page = client.get("/", params={"account": "Nope"}, headers=ME).text
+    assert "Acme Gym" in page and "Streamflix" in page
+
+
+def test_changing_a_status_keeps_the_account_filter(client):
+    upload_two_accounts(client)
+    page = client.post("/status", headers={**ME, **HTMX},
+                       data={"merchant": "Acme Gym", "status": "keep", "account": "Checking"}).text
+    assert "Streamflix" not in page

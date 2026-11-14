@@ -64,24 +64,29 @@ def htmx_only(request: Request) -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def subscriptions(request: Request, period: str = "12m", user=Depends(current_user), conn=Depends(get_db)):
-    return _render_subscriptions(request, user, conn, period)
+def subscriptions(request: Request, period: str = "12m", account: str = "",
+                  user=Depends(current_user), conn=Depends(get_db)):
+    return _render_subscriptions(request, user, conn, period, account)
 
 
 @app.post("/status", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
-def set_status(request: Request, merchant: str = Form(), status: str = Form(), period: str = Form("12m"),
+def set_status(request: Request, merchant: str = Form(), status: str = Form(),
+               period: str = Form("12m"), account: str = Form(""),
                user=Depends(current_user), conn=Depends(get_db)):
     if status not in STATUSES:
         raise HTTPException(400, "Unknown status")
     db.set_mark(conn, user, merchant, status)
-    return _render_subscriptions(request, user, conn, period)
+    return _render_subscriptions(request, user, conn, period, account)
 
 
-def _render_subscriptions(request, user, conn, period):
+def _render_subscriptions(request, user, conn, period, account):
     today = date.today()
     if period not in PERIODS:
         period = "12m"
-    subs = detect(db.spending_by_merchant(conn, user))
+    accounts = db.accounts(conn, user)
+    if account not in accounts:
+        account = ""
+    subs = detect(db.spending_by_merchant(conn, user, account or None))
     marks = db.marks(conn, user)
     tracked = [s for s in subs if marks.get(s.merchant) != "not_subscription"]
     months = _last_months(today, _month_count(period, today, tracked))
@@ -99,7 +104,9 @@ def _render_subscriptions(request, user, conn, period):
         "today": today,
         "statuses": STATUSES,
         "sections": sections,
-        "has_data": bool(db.accounts(conn, user)),
+        "has_data": bool(accounts),
+        "accounts": accounts,
+        "account": account,
         "has_subscriptions": bool(subs),
         "spent": spent,
         "period_cents": sum(totals),

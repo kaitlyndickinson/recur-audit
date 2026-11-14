@@ -180,8 +180,8 @@ a:hover { text-decoration: underline; }
 .chart { margin: 0; padding: 16px 16px 12px; }
 .chart figcaption { font-weight: 500; font-size: 0.9rem; margin-bottom: 16px; }
 
-.dash-head { display: flex; justify-content: flex-end; margin-bottom: 8px; }
-.periods {
+.dash-head { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
+.pills {
   display: flex;
   gap: 2px;
   padding: 2px;
@@ -189,10 +189,12 @@ a:hover { text-decoration: underline; }
   border-radius: 999px;
   background: var(--page);
   font: 500 0.68rem var(--mono);
+  max-width: 100%;
+  overflow-x: auto;
 }
-.periods a { padding: 3px 9px; border-radius: 999px; color: var(--muted); }
-.periods a:hover { color: var(--ink); text-decoration: none; }
-.periods a[aria-current="true"] { background: var(--accent); color: var(--on-accent); }
+.pills a { padding: 3px 9px; border-radius: 999px; color: var(--muted); white-space: nowrap; }
+.pills a:hover { color: var(--ink); text-decoration: none; }
+.pills a[aria-current="true"] { background: var(--accent); color: var(--on-accent); }
 
 .columns, .line-chart {
   position: relative;

@@ -130,14 +130,17 @@ def merchant_names(conn, owner) -> dict[str, str]:
     return {r["merchant_key"]: aliases.get(r["merchant_key"]) or display_name(r["merchant_key"]) for r in keys}
 
 
-def spending_by_merchant(conn, owner) -> dict[str, list[Charge]]:
+def spending_by_merchant(conn, owner, account: str | None = None) -> dict[str, list[Charge]]:
+    """Money out, grouped by merchant name; only from `account` when one is given."""
     names = merchant_names(conn, owner)
     grouped = defaultdict(list)
     for r in conn.execute(
-        "SELECT posted_on, amount_cents, merchant_key FROM transactions WHERE owner = ? AND amount_cents < 0",
-        (owner,),
+        """SELECT posted_on, amount_cents, merchant_key, account FROM transactions
+           WHERE owner = ? AND amount_cents < 0 AND (? IS NULL OR account = ?)""",
+        (owner, account, account),
     ):
-        grouped[names[r["merchant_key"]]].append(Charge(date.fromisoformat(r["posted_on"]), -r["amount_cents"]))
+        grouped[names[r["merchant_key"]]].append(
+            Charge(date.fromisoformat(r["posted_on"]), -r["amount_cents"], r["account"]))
     return dict(grouped)
 
 
