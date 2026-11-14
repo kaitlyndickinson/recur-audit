@@ -68,3 +68,11 @@ Each uploaded file is stored byte-for-byte at `data/raw/<sha256>.<ext>` and neve
 **Why:** Imports can always be replayed or audited, and re-importing overlapping date ranges is safe.
 
 **Rules out:** Editing transactions in place, for now.
+
+## Deploy: a systemd user service, no container
+
+`deploy/install.sh` makes a venv in the checkout and links `deploy/household-app.service` as a user unit, which runs uvicorn on `127.0.0.1:8000` with `UMask=0077`. `tailscale serve` publishes it on its own HTTPS port.
+
+**Why:** It's one Python process with a SQLite file. A user service matches how other self-hosted services on the host run, needs no root, and keeps the data under the user's home with private permissions.
+
+**Rules out:** Containers and a reverse proxy, for now, plus running as root or as a system-wide service.

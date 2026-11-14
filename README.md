@@ -29,6 +29,18 @@ HOUSEHOLD_DEV_USER=you@example.com .venv/Scripts/uvicorn app.main:app --host 127
 
 To try it with fake data, run `python scripts/make_demo_data.py` and import `data/demo/demo-card.csv`. Set `HOUSEHOLD_DATA_DIR=data/demo` to keep the demo database separate from the real one.
 
+### On the server
+
+On the Linux machine that holds the real data, clone to `~/dev/projects/household-app` and run the app as a systemd user service:
+
+```sh
+deploy/install.sh                                   # rerun after each git pull
+systemctl --user status household-app
+journalctl --user -u household-app -f
+```
+
+The service listens on `127.0.0.1:8000`, keeps its data in the checkout's `data/`, and creates files readable only by your user. User services stop when you log out unless lingering is on (`loginctl enable-linger`); the script tells you if it's off.
+
 ### On your phones
 
 The app only listens on localhost. Publish it to your tailnet on its own HTTPS port, so it doesn't replace anything already served on 443:
