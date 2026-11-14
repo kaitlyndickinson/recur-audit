@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Merchants · Household{% endblock %}
+{% block content %}
+<section id="merchants">
+  <h1>Merchants</h1>
+  <p class="muted">Bank descriptions are cleaned up automatically. Rename any that look wrong. Give two the same name to merge them, or clear a name to undo.</p>
+
+  {% if not merchants %}
+    <p class="empty muted">Nothing imported yet.</p>
+  {% else %}
+  <datalist id="merchant-names">
+    {% for name in names %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+  <ul class="list card">
+    {% for m in merchants %}
+      <li class="merchant-row">
+        <form hx-post="/merchants/rename" hx-trigger="change" hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
+          <input type="hidden" name="key" value="{{ m.merchant_key }}">
+          <label class="visually-hidden" for="m-{{ loop.index }}">Name for {{ m.example }}</label>
+          <input class="inline-input" id="m-{{ loop.index }}" name="name" value="{{ m.name }}" list="merchant-names" autocomplete="off">
+        </form>
+        <span class="muted example" title="{{ m.example }}">{{ m.example }}</span>
+        <span class="merchant-stats">
+          <span class="amount">{{ m.spent_cents | money }}</span>
+          <span class="muted">{{ m.charges }} charge{{ "" if m.charges == 1 else "s" }}</span>
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

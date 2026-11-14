@@ -1,0 +1,7 @@
+<div class="status-picker" id="status-picker" role="group" aria-label="Status">
+  {% for value, text in [("keep", "Keep"), ("cancel", "Cancel"), ("cancelled", "Cancelled"), ("not_subscription", "Not a sub")] %}
+    <button class="segment" aria-pressed="{{ 'true' if value == status else 'false' }}"
+            hx-post="/merchant/status" hx-vals='{"merchant": {{ name | tojson }}, "status": "{{ "review" if value == status else value }}"}'
+            hx-target="#status-picker" hx-swap="outerHTML">{{ text }}</button>
+  {% endfor %}
+</div>

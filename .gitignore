@@ -1,0 +1,27 @@
+# Financial data never goes in git
+data/
+*.csv
+*.ofx
+*.qfx
+*.db
+*.sqlite
+
+# Secrets (Gmail OAuth etc.)
+.env
+credentials*.json
+token*.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Personal Claude notes
+CLAUDE.local.md
+
+# Tooling
+.pytest_cache/
+*.egg-info/

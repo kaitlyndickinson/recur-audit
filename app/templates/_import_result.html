@@ -1,0 +1,12 @@
+{% if error %}
+  <div class="notice error">
+    <strong>Couldn’t import {{ filename }}</strong>
+    <p>{{ error }}</p>
+  </div>
+{% else %}
+  <div class="notice ok">
+    <strong>Imported {{ filename }}</strong>
+    <p>{{ added }} new transaction{{ "" if added == 1 else "s" }}{% if skipped %}, {{ skipped }} already here{% endif %}.</p>
+    <a href="/">See subscriptions →</a>
+  </div>
+{% endif %}
