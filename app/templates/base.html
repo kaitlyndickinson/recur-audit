@@ -3,19 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f6f6f3" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d0e16">
+  <link rel="preload" href="/static/fonts/space-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
   <title>{% block title %}Household{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">Household</a>
+    <a class="brand" href="/">~/household<span>›</span></a>
     <nav class="tabs" aria-label="Sections">
       {% set here = request.url.path %}
-      <a href="/" {% if here == "/" or here.startswith("/merchant?") %}aria-current="page"{% endif %}>Subscriptions</a>
+      <a href="/" {% if here in ("/", "/merchant") %}aria-current="page"{% endif %}>Subscriptions</a>
       <a href="/merchants" {% if here == "/merchants" %}aria-current="page"{% endif %}>Merchants</a>
       <a href="/import" {% if here == "/import" %}aria-current="page"{% endif %}>Import</a>
     </nav>

@@ -1,4 +1,5 @@
 import re
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +12,9 @@ HTMX = {"HX-Request": "true"}
 
 
 def monthly_csv(months: range, description="STREAMFLIX.COM 866-555-0100 CA", amount="-15.49") -> bytes:
-    lines = ["Date,Description,Amount"] + [f"2026-{m:02d}-14,{description},{amount}" for m in months]
+    """Month 1 is 11 months ago and month 11 is last month, so every charge falls in the default 12-month view."""
+    days = months_back(11)
+    lines = ["Date,Description,Amount"] + [f"{days[m - 1]},{description},{amount}" for m in months]
     return ("\n".join(lines) + "\n").encode()
 
 
@@ -91,3 +94,110 @@ def test_renaming_two_merchants_to_one_name_merges_them(client):
     detail = client.get("/merchant", params={"name": "Streamflix"}, headers=ME).text
     assert "Monthly" in detail
     assert detail.count("$15.49") >= 6
+
+
+def test_merchant_page_highlights_the_subscriptions_tab(client):
+    upload(client, monthly_csv(range(1, 7)))
+    page = client.get("/merchant", params={"name": "Streamflix"}, headers=ME).text
+    assert re.search(r'<a href="/" aria-current="page">', page)
+
+
+def months_back(count: int) -> list[date]:
+    """The 14th of each of the last `count` full months, oldest first, so tests don't depend on today's date."""
+    first = date.today().replace(day=1)
+    days = []
+    for _ in range(count):
+        first = (first - timedelta(days=1)).replace(day=1)
+        days.append(first.replace(day=14))
+    return days[::-1]
+
+
+def charges_csv(days: list[date], amount="-15.49") -> bytes:
+    lines = ["Date,Description,Amount"] + [f"{d},STREAMFLIX.COM 866-555-0100 CA,{amount}" for d in days]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def test_period_limits_the_spend_total(client):
+    upload(client, charges_csv(months_back(10)))
+    assert "$30.98" in visible_text(client.get("/", params={"period": "3m"}, headers=ME).text)  # 2 full months + this one
+    assert "$154.90" in visible_text(client.get("/", headers=ME).text)  # default 12 months covers all 10
+    assert "$154.90" in visible_text(client.get("/", params={"period": "all"}, headers=ME).text)
+
+
+def test_unknown_period_falls_back_to_12_months(client):
+    upload(client, charges_csv(months_back(10)))
+    page = client.get("/", params={"period": "bogus"}, headers=ME)
+    assert page.status_code == 200
+    assert re.search(r'period=12m"[^>]*aria-current="true"', page.text)
+
+
+def test_changing_a_status_keeps_the_period(client):
+    upload(client, charges_csv(months_back(10)))
+    page = client.post("/status", headers={**ME, **HTMX},
+                       data={"merchant": "Streamflix", "status": "keep", "period": "3m"}).text
+    assert "$30.98" in visible_text(page)
+
+
+def test_static_files_are_revalidated_so_style_changes_show_up(client):
+    assert client.get("/static/app.css").headers["cache-control"] == "no-cache"
+
+
+def test_list_only_shows_subscriptions_charged_in_the_period(client):
+    upload(client, charges_csv(months_back(10)))
+    yearly = months_back(33)
+    upload(client, charges_csv([yearly[-9], yearly[-21], yearly[-33]], amount="-99.00").replace(b"STREAMFLIX.COM 866-555-0100 CA", b"APPDEV PRO ANNUAL"), name="b.csv")
+    assert "Appdev Pro Annual" in client.get("/", headers=ME).text
+    three_months = client.get("/", params={"period": "3m"}, headers=ME).text
+    assert "Streamflix" in three_months
+    assert "Appdev Pro Annual" not in three_months
+
+
+def imports_page(client, headers=ME) -> str:
+    return client.get("/import", headers=headers).text
+
+
+def import_id(client, filename="export.csv") -> str:
+    return re.search(rf'data-import-id="(\d+)"[^>]*>\s*<[^>]*>\s*{re.escape(filename)}', imports_page(client)).group(1)
+
+
+def delete_import(client, id_, headers=ME):
+    return client.post("/import/delete", headers={**headers, **HTMX}, data={"import_id": id_})
+
+
+def test_imports_are_listed_for_their_owner_only(client):
+    upload(client, monthly_csv(range(1, 7)), account="Checking")
+    assert "export.csv" in imports_page(client)
+    assert "Checking" in imports_page(client)
+    assert "export.csv" not in imports_page(client, PARTNER)
+
+
+def test_deleting_an_import_removes_its_transactions_and_stored_file(client, tmp_path):
+    upload(client, monthly_csv(range(1, 7)))
+    assert list((tmp_path / "raw").iterdir())
+    delete_import(client, import_id(client))
+    assert "export.csv" not in imports_page(client)
+    assert "Streamflix" not in client.get("/", headers=ME).text
+    assert not list((tmp_path / "raw").iterdir())
+
+
+def test_deleting_an_import_keeps_rows_another_import_also_had(client):
+    upload(client, monthly_csv(range(1, 7)), name="jan-jun.csv")
+    upload(client, monthly_csv(range(4, 10)), name="apr-sep.csv")  # months 4-6 were skipped as duplicates
+    delete_import(client, import_id(client, "jan-jun.csv"))
+    assert "$92.94" in visible_text(client.get("/", headers=ME).text)  # months 4-9: 6 x 15.49
+
+
+def test_people_cant_delete_each_others_imports(client):
+    upload(client, monthly_csv(range(1, 7)))
+    id_ = import_id(client)
+    assert delete_import(client, id_, PARTNER).status_code == 404
+    assert client.post("/import/delete", headers=ME, data={"import_id": id_}).status_code == 403
+    assert "export.csv" in imports_page(client)
+
+
+def test_deleting_keeps_the_stored_file_when_someone_else_imported_it_too(client, tmp_path):
+    upload(client, monthly_csv(range(1, 7)))
+    upload(client, monthly_csv(range(1, 7)), headers=PARTNER)
+    delete_import(client, import_id(client))
+    assert list((tmp_path / "raw").iterdir())
+    assert "Streamflix" in client.get("/", headers=PARTNER).text

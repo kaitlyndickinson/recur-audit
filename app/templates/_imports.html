@@ -1,0 +1,23 @@
+<section id="imports" class="section"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if imports %}
+    <h2>Your statements <span class="count">{{ imports | length }}</span><span class="muted section-note">Only you can see these</span></h2>
+    <ul class="list card">
+      {% for imp in imports %}
+        <li class="import-row" data-import-id="{{ imp.id }}">
+          <span class="import-name">{{ imp.filename }}</span>
+          <span class="import-meta">
+            {{ imp.account }} ·
+            {% if imp.added %}
+              {{ imp.added }} transaction{{ "" if imp.added == 1 else "s" }}, {{ imp.first_day | iso | day }} – {{ imp.last_day | iso | day }}
+            {% else %}
+              nothing new (all already imported)
+            {% endif %}
+          </span>
+          <button class="chip danger" hx-post="/import/delete" hx-vals='{"import_id": {{ imp.id }}}'
+                  hx-target="#imports" hx-swap="outerHTML"
+                  hx-confirm="Delete {{ imp.filename }}? Its transactions and the stored copy of the file are removed. You can import it again later.">Delete</button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>

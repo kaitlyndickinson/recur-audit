@@ -2,27 +2,30 @@
 {% block title %}Import · Household{% endblock %}
 {% block content %}
 <section class="narrow">
-  <h1>Import an export</h1>
-  <p class="muted">CSV, OFX or QFX from your bank or card. Overlapping date ranges are fine because duplicates are skipped. The original file is kept untouched on this machine.</p>
+  <h1>Import a statement</h1>
+  <p class="muted">On your bank or card's website, download your transaction history as a CSV, OFX or QFX file. Several months works best, since it takes 3 charges to spot a subscription. Overlapping dates are fine: repeats are skipped.</p>
 
   <form class="card form" hx-post="/import" hx-encoding="multipart/form-data" hx-target="#import-result"
         hx-on::after-request="if (event.detail.successful) this.querySelector('[type=file]').value = ''">
     <label class="field">
-      <span>File</span>
+      <span>Statement file</span>
       <input type="file" name="file" accept=".csv,.ofx,.qfx" required>
+      <small class="muted">CSV, OFX or QFX</small>
     </label>
     <label class="field">
-      <span>Account</span>
+      <span>Which account is it from?</span>
       <input type="text" name="account" list="accounts" placeholder="Checking, Travel card…" autocomplete="off" required>
       <datalist id="accounts">
         {% for account in accounts %}<option value="{{ account }}">{% endfor %}
       </datalist>
-      <small class="muted">Use the same name each time you import from this account.</small>
+      <small class="muted">Use the same name every time you import from this account.</small>
     </label>
     <button class="button primary" type="submit">
       <span class="idle">Import</span><span class="busy">Importing…</span>
     </button>
   </form>
   <div id="import-result" aria-live="polite"></div>
+
+  {% include "_imports.html" %}
 </section>
 {% endblock %}

@@ -3,16 +3,26 @@
 {% if not has_data %}
   <section class="empty">
     <h1>Find the subscriptions you forgot about</h1>
-    <p>Import a bank or card export and recurring charges show up here with what they cost per year.</p>
-    <a class="button primary" href="/import">Import an export</a>
+    <p>Download a statement from your bank or card's website (CSV, OFX or QFX) and import it. Recurring charges show up here with what they cost.</p>
+    <a class="button primary" href="/import">Import a statement</a>
   </section>
 {% else %}
 <div id="subs">
+  <div class="dash-head">
+    <h1 class="visually-hidden">Subscriptions</h1>
+    <nav class="periods" aria-label="Time period">
+      {% for key, (label, _) in periods.items() %}
+        <a href="/?period={{ key }}" hx-get="/?period={{ key }}" hx-target="#subs" hx-select="#subs" hx-swap="outerHTML"
+           hx-push-url="true" {% if key == period %}aria-current="true"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+
   <section class="overview">
     <div class="hero">
-      <p class="eyebrow">Subscriptions cost</p>
-      <p class="hero-figure">{{ monthly_cents | money_short }}<span>/mo</span></p>
-      <p class="muted">{{ yearly_cents | money_short }} a year across {{ active_count }} active</p>
+      <p class="eyebrow">Spent on subscriptions {{ periods[period][1] }}</p>
+      <p class="hero-figure">{{ period_cents | money_short }}</p>
+      <p class="muted">≈ {{ monthly_average_cents | money_short }}/mo across {{ counted }} subscription{{ "" if counted == 1 else "s" }}</p>
       <dl class="stats">
         <div>
           <dt>Marked to cancel</dt>
@@ -26,19 +36,21 @@
     </div>
 
     <figure class="card chart">
-      <figcaption>
-        <span>Spend on recurring charges</span>
-        <span class="muted">last 12 months</span>
-      </figcaption>
+      <figcaption>Spend by month</figcaption>
       <div class="columns" role="img" aria-label="Monthly spend on recurring charges; see the table below for values">
         {% for pct, cents in chart.ticks %}
           <div class="gridline" style="bottom: {{ pct }}%"><span>{{ cents | money_short }}</span></div>
         {% endfor %}
         {% for month, cents, pct in chart.bars %}
-          <div class="column{% if loop.last %} current{% endif %}" tabindex="0">
+          <div class="column{% if loop.last %} current{% endif %}{% if loop.index > chart.bars | length / 2 %} right{% endif %}" tabindex="0">
             <div class="bar" style="height: {{ pct }}%"></div>
             <span class="tip">{{ month.strftime("%b %Y") }} · {{ cents | money }}{% if loop.last %} so far{% endif %}</span>
-            <span class="tick" aria-hidden="true">{{ month.strftime("%b")[0] }}</span>
+            {# Past a year, one letter per month gets crowded; label each January with its year instead. #}
+            {% if chart.bars | length <= 12 %}
+              <span class="tick" aria-hidden="true">{{ month.strftime("%b")[0] }}</span>
+            {% elif month.month == 1 %}
+              <span class="tick" aria-hidden="true">{{ month.strftime("'%y") }}</span>
+            {% endif %}
           </div>
         {% endfor %}
       </div>
@@ -67,7 +79,7 @@
             <a class="sub-main" href="/merchant?name={{ sub.merchant | urlencode }}">
               <span class="sub-name">{{ sub.merchant }}</span>
               <span class="sub-meta">
-                {{ sub.cadence | capitalize }}
+                {{ sub.cadence | capitalize }} · {{ sub.latest_cents | money }}
                 {% if sub.is_stopped(today) %}
                   · <span class="badge quiet">No charge since {{ sub.last_charged | day }}</span>
                 {% else %}
@@ -79,19 +91,19 @@
               </span>
             </a>
             <span class="sub-amount">
-              <span class="amount">{{ sub.latest_cents | money }}</span>
+              <span class="amount" title="Spent {{ periods[period][1] }}">{{ spent[sub.merchant] | money }}</span>
               <span class="muted">{{ sub.yearly_cents | money_short }}/yr</span>
             </span>
             <div class="sub-actions">
               {% if status == "review" %}
                 {% for value, text in [("keep", "Keep"), ("cancel", "Cancel"), ("not_subscription", "Not a subscription")] %}
-                  <button class="chip" hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "status": "{{ value }}"}'
+                  <button class="chip" hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "status": "{{ value }}", "period": "{{ period }}"}'
                           hx-target="#subs" hx-select="#subs" hx-swap="outerHTML">{{ text }}</button>
                 {% endfor %}
               {% else %}
                 <label class="visually-hidden" for="status-{{ loop.index }}-{{ status }}">Status for {{ sub.merchant }}</label>
                 <select class="chip select" id="status-{{ loop.index }}-{{ status }}" name="status"
-                        hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}}'
+                        hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "period": "{{ period }}"}'
                         hx-target="#subs" hx-select="#subs" hx-swap="outerHTML">
                   {% for value, text in statuses.items() %}
                     <option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ text }}</option>
@@ -105,8 +117,10 @@
     {% if status == "not_subscription" %}</details>{% else %}</section>{% endif %}
   {% endfor %}
 
-  {% if not sections.values() | sum(start=[]) %}
+  {% if not has_subscriptions %}
     <p class="empty muted">No recurring charges found yet. Import a few months of history, since it takes at least 3 charges to spot a pattern.</p>
+  {% elif not sections.values() | sum(start=[]) %}
+    <p class="empty muted">No subscription charges {{ periods[period][1] }}. Try a longer period.</p>
   {% endif %}
 </div>
 {% endif %}

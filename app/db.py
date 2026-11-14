@@ -69,6 +69,13 @@ def save_import(conn, owner, account, filename, sha256, rows) -> tuple[int, int]
         ).lastrowid
     except sqlite3.IntegrityError:
         return None
+    added = add_rows(conn, owner, import_id, account, rows)
+    conn.commit()
+    return added, len(rows) - added
+
+
+def add_rows(conn, owner, import_id, account, rows) -> int:
+    """Insert rows not already stored; returns how many were new. The caller commits."""
     seen = Counter()
     added = 0
     for row in rows:
@@ -82,8 +89,32 @@ def save_import(conn, owner, account, filename, sha256, rows) -> tuple[int, int]
             (owner, import_id, account, row.posted_on.isoformat(), row.amount_cents,
              row.description, merchant_key(row.description), seq),
         ).rowcount
-    conn.commit()
-    return added, len(rows) - added
+    return added
+
+
+def imports(conn, owner) -> list[sqlite3.Row]:
+    """Newest first, with how many transactions each one added and the dates they span."""
+    return conn.execute(
+        """SELECT i.id, i.filename, i.sha256, i.account, i.imported_at,
+                  COUNT(t.id) AS added, MIN(t.posted_on) AS first_day, MAX(t.posted_on) AS last_day
+           FROM imports i LEFT JOIN transactions t ON t.import_id = i.id
+           WHERE i.owner = ? GROUP BY i.id ORDER BY i.id DESC""",
+        (owner,),
+    ).fetchall()
+
+
+def delete_import(conn, owner, import_id) -> sqlite3.Row | None:
+    """Remove an import and the transactions it added. Returns it, or None if it isn't this owner's. The caller commits."""
+    row = conn.execute("SELECT * FROM imports WHERE id = ? AND owner = ?", (import_id, owner)).fetchone()
+    if row:
+        conn.execute("DELETE FROM transactions WHERE import_id = ?", (import_id,))
+        conn.execute("DELETE FROM imports WHERE id = ?", (import_id,))
+    return row
+
+
+def file_in_use(conn, sha256) -> bool:
+    """Whether anyone still has this file imported; both people may import the same joint statement."""
+    return conn.execute("SELECT 1 FROM imports WHERE sha256 = ?", (sha256,)).fetchone() is not None
 
 
 def accounts(conn, owner) -> list[str]:

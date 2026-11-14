@@ -65,9 +65,11 @@ The analysis is computed in the app. A self-hosted model on the tailnet (OpenAI-
 
 Each uploaded file is stored byte-for-byte at `data/raw/<sha256>.<ext>` and never modified. Cleaning happens only on the parsed rows in the database. The same file can't be imported twice. Rows repeated across overlapping exports are skipped by a unique key, `(owner, account, date, amount, description, n-th occurrence in the file)`.
 
-**Why:** Imports can always be replayed or audited, and re-importing overlapping date ranges is safe.
+Each person can delete their own imports. Deleting removes the transactions that import added and its stored file (unless someone else imported the same file), then re-reads the remaining stored files so rows they share with it aren't lost. Keep/cancel marks and merchant names stay.
 
-**Rules out:** Editing transactions in place, for now.
+**Why:** Imports can always be replayed or audited, and re-importing overlapping date ranges is safe. Deleting a wrong or unwanted statement has to actually remove it, not just hide it.
+
+**Rules out:** Editing transactions in place, for now, and soft-deleting imports.
 
 ## Deploy: a systemd user service, no container
 
@@ -76,3 +78,11 @@ Each uploaded file is stored byte-for-byte at `data/raw/<sha256>.<ext>` and neve
 **Why:** It's one Python process with a SQLite file. A user service matches how other self-hosted services on the host run, needs no root, and keeps the data under the user's home with private permissions.
 
 **Rules out:** Containers and a reverse proxy, for now, plus running as root or as a system-wide service.
+
+## Look: dark-only "night shell" theme with vendored fonts
+
+One dark palette (ink-navy, cyan accent, pink for price increases). Space Grotesk for text and JetBrains Mono for every amount, date and label, both served from `app/static/fonts/` under the SIL Open Font License.
+
+**Why:** A finance dashboard with a terminal feel: monospace, fixed-width digits make amounts line up. A single theme is half the CSS to keep consistent.
+
+**Rules out:** A light theme, for now, and loading fonts from a CDN.

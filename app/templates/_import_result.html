@@ -9,4 +9,5 @@
     <p>{{ added }} new transaction{{ "" if added == 1 else "s" }}{% if skipped %}, {{ skipped }} already here{% endif %}.</p>
     <a href="/">See subscriptions →</a>
   </div>
+  {% with oob = true %}{% include "_imports.html" %}{% endwith %}
 {% endif %}
