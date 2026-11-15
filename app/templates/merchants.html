@@ -18,13 +18,17 @@
       {% if counts.none %}<a href="{{ filter_url('none') }}" {% if category == "none" %}aria-current="true"{% endif %}>Uncategorized <span>{{ counts.none }}</span></a>{% endif %}
     </nav>
     {% if can_suggest and counts.none %}
+      {# The whole section shows it's busy, so nothing gets edited while the model answers. #}
       <button class="button" hx-post="/merchants/suggest" hx-vals='{"filter": {{ category | tojson }}}'
-              hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
+              hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML"
+              hx-indicator="#merchants" hx-disabled-elt="this">
         <span class="idle">Suggest categories</span><span class="busy">Asking the model…</span>
       </button>
     {% endif %}
   </div>
+  <div class="notice busy-note"><p>Categorizing {{ counts.none }} merchant{{ "" if counts.none == 1 else "s" }} with your model. It takes a few seconds, or about a minute if the model was asleep.</p></div>
   {% if error %}<div class="notice error"><p>{{ error }}</p></div>{% endif %}
+  {% if suggested is not none %}<div class="notice ok"><p>{{ suggested }}</p></div>{% endif %}
   {% if not merchants %}
     <p class="empty muted">No merchants in this category.</p>
   {% else %}

@@ -548,6 +548,10 @@ button, select, input { font: inherit; color: inherit; }
 .filter-chips a span { margin-left: 4px; color: var(--muted); font: 0.75rem var(--mono); }
 .filter-chips a[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .filter-chips a[aria-current="true"] span { color: inherit; opacity: 0.75; }
+.busy-note { display: none; background: var(--accent-soft); }
+#merchants.htmx-request .busy-note { display: block; }
+#merchants.htmx-request .notice.ok, #merchants.htmx-request .notice.error { display: none; }
+#merchants.htmx-request .list, #merchants.htmx-request .filter-chips { opacity: 0.4; pointer-events: none; }
 .merchant-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; }
 .merchant-stats { grid-row: 1 / span 2; grid-column: 2; display: flex; flex-direction: column; align-items: flex-end; font-size: 0.75rem; }
 

@@ -119,3 +119,20 @@ def test_weekly_shopping_with_changing_amounts_is_not_a_bill():
     charges = [Charge(date(2026, 1, 3) + timedelta(weeks=w), a)
                for w, a in enumerate([8211, 4520, 12090, 6310, 9930, 3870, 10450, 5120])]
     assert detect({"GROCER": charges}) == []
+
+
+def test_random_purchases_in_a_narrow_price_band_are_not_a_plan():
+    purchases = [("2025-09-07", 1357), ("2025-09-30", 2559), ("2025-10-09", 1201), ("2025-10-19", 2556),
+                 ("2025-11-06", 1624), ("2025-11-20", 2505), ("2025-11-25", 2032), ("2026-01-17", 2618),
+                 ("2026-01-22", 1320), ("2026-02-28", 1189), ("2026-03-03", 1719), ("2026-03-05", 1944),
+                 ("2026-03-31", 1572), ("2026-05-07", 2333), ("2026-05-23", 1971), ("2026-05-30", 2044),
+                 ("2026-06-02", 1132), ("2026-06-06", 2424), ("2026-06-08", 2070), ("2026-07-01", 2186),
+                 ("2026-07-16", 1642), ("2026-10-03", 1654)]
+    charges = [Charge(date.fromisoformat(day), cents) for day, cents in purchases]
+    assert detect({"TACO PLACE": charges}) == []
+
+
+def test_a_utility_bill_with_a_few_similar_months_is_still_a_variable_bill():
+    amounts = [5512, 14230, 7870, 13011, 6640, 14390, 5980, 9020, 11800, 10120, 12088, 11540, 10930, 12500]
+    [sub] = detect({"CITY POWER": monthly(date(2025, 9, 8), amounts)})
+    assert sub.variable

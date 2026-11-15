@@ -78,7 +78,7 @@ checking = []
 for when in months(1):
     checking.append((when, "ACH DEBIT MAPLE COURT APTS RENT", "1850.00", ""))  # regular, so it shows up: mark it "Not a subscription"
 for when in months(8):
-    checking.append((when, "CITY POWER AND LIGHT", f"{rng.uniform(55, 150):.2f}", ""))  # swings too much to count
+    checking.append((when, "CITY POWER AND LIGHT", f"{rng.uniform(55, 150):.2f}", ""))  # swings in amount, so it shows up as a variable bill
 for when in months(12):
     checking.append((when, "FIBERNET INTERNET", "70.00", ""))
 for when in months(5, every=3):

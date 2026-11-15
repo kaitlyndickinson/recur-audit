@@ -264,7 +264,7 @@ def merchants(request: Request, category: str = "", user=Depends(current_user), 
     return _render_merchants(request, user, conn, category)
 
 
-def _render_merchants(request, user, conn, category="", error=None):
+def _render_merchants(request, user, conn, category="", error=None, suggested=None):
     """`category` filters the list: one of CATEGORIES, "none" for uncategorized, or empty for all."""
     rows = db.merchant_summary(conn, user)
     chosen = db.categories(conn, user)
@@ -276,7 +276,8 @@ def _render_merchants(request, user, conn, category="", error=None):
         rows = [r for r in rows if chosen.get(r["name"], "none") == category]
     return templates.TemplateResponse(request, "merchants.html", {
         "user": user, "merchants": rows, "chosen": chosen, "categories": categories.CATEGORIES,
-        "counts": counts, "category": category, "can_suggest": categories.configured(), "error": error})
+        "counts": counts, "category": category, "can_suggest": categories.configured(), "error": error,
+        "suggested": suggested})
 
 
 @app.post("/merchants/rename", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
@@ -309,11 +310,15 @@ def suggest_categories(request: Request, filter: str = Form(""), user=Depends(cu
         if row["name"] not in chosen:
             todo.setdefault(row["name"], row["example"])
     try:
-        db.set_categories(conn, user, categories.suggest(list(todo.items())))
+        found = categories.suggest(list(todo.items()))
     except categories.ModelUnavailable as error:
         log.warning("category suggestions failed: %s", error)
         return _render_merchants(request, user, conn, filter, error="Couldn’t reach the model. Is it running?")
-    return _render_merchants(request, user, conn, filter)
+    db.set_categories(conn, user, found)
+    message = f"Suggested a category for {len(found)} merchant{'' if len(found) == 1 else 's'}."
+    if len(found) < len(todo):
+        message += f" {len(todo) - len(found)} still need one; pick those yourself."
+    return _render_merchants(request, user, conn, filter, suggested=message)
 
 
 # ---------- Email cleanup ----------

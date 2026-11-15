@@ -86,7 +86,8 @@ def test_suggest_fills_only_uncategorized_merchants_and_sends_no_amounts_or_date
     upload(client, monthly_csv(range(1, 4), description="FRESHMART", amount="-82.10"), name="b.csv")
     set_category(client, "Freshmart", "Shopping")
 
-    assert client.post("/merchants/suggest", headers={**ME, **HTMX}).status_code == 200
+    page = visible_text(client.post("/merchants/suggest", headers={**ME, **HTMX}).text)
+    assert "Suggested a category for 1 merchant." in page
     groceries = client.get("/merchants", params={"category": "Groceries"}, headers=ME).text
     streaming = client.get("/merchants", params={"category": "Subscriptions & streaming"}, headers=ME).text
     assert "Freshmart" not in groceries  # the person's own choice stays

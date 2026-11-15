@@ -21,8 +21,6 @@ STOPPED_AFTER_PERIODS = 1.5
 # Judge the latest regular stretch, so a move or plan change doesn't hide a subscription, but only when
 # that stretch is a good share of the charges, so a lucky few among random purchases don't count.
 MIN_RUN_SHARE = 1 / 3
-# App stores and PayPal bill each plan separately under one name; charges this close in price are one plan.
-SAME_PLAN_TOLERANCE = 0.05
 # Bills like a card autopay change every time, so only their timing can mark them as recurring.
 VARIABLE_BILL_MIN_CHARGES = 6
 
@@ -126,7 +124,10 @@ def _subscription(merchant: str, charges: list[Charge], plan_cents: int | None =
             if len(charges) - start >= len(charges) * MIN_RUN_SHARE]
     for run in runs:
         cadence = _cadence(run)
-        if cadence and _amounts_are_stable(run):
+        # A recent run alone must hold one steady price, as after a plan change; a bill that swings
+        # every month can have a few similar months in a row, and that doesn't make it a fixed price.
+        stable = _amounts_are_stable(run) if len(run) == len(charges) else _price_is_steady(run)
+        if cadence and stable:
             return Subscription(merchant, cadence, charges, plan_cents=plan_cents)
     for run in runs:
         cadence = _cadence(run)
@@ -136,14 +137,15 @@ def _subscription(merchant: str, charges: list[Charge], plan_cents: int | None =
 
 
 def _plans(charges: list[Charge]) -> list[list[Charge]]:
-    """Charges grouped by price, oldest first in each group; groups too small to recur are dropped."""
-    groups: list[list[Charge]] = []
-    for charge in sorted(charges, key=lambda charge: charge.amount_cents):
-        if groups and charge.amount_cents <= groups[-1][0].amount_cents * (1 + SAME_PLAN_TOLERANCE):
-            groups[-1].append(charge)
-        else:
-            groups.append([charge])
-    return [sorted(group, key=lambda charge: charge.posted_on) for group in groups if len(group) >= MIN_CHARGES]
+    """Charges grouped by exact price, oldest first; groups too small to recur are dropped.
+
+    App stores and PayPal bill each plan separately under one name, always for the same amount. Grouping
+    near prices instead would turn random purchases that happen to cost about the same into plans.
+    """
+    groups: dict[int, list[Charge]] = {}
+    for charge in charges:
+        groups.setdefault(charge.amount_cents, []).append(charge)
+    return [group for group in groups.values() if len(group) >= MIN_CHARGES]
 
 
 def _cadence(charges: list[Charge]) -> str | None:
@@ -156,6 +158,11 @@ def _cadence(charges: list[Charge]) -> str | None:
             regular = sum(abs(gap - days) <= days * GAP_TOLERANCE for gap in gaps)
             return name if regular / len(gaps) >= MIN_REGULAR_GAP_SHARE else None
     return None
+
+
+def _price_is_steady(charges: list[Charge]) -> bool:
+    typical = median(charge.amount_cents for charge in charges)
+    return all(abs(charge.amount_cents - typical) <= typical * PRICE_CHANGE_THRESHOLD for charge in charges)
 
 
 def _amounts_are_stable(charges: list[Charge]) -> bool:
