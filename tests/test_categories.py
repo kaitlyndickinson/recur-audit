@@ -1,4 +1,6 @@
+import html
 import json
+from datetime import date, timedelta
 
 import httpx
 import pytest
@@ -114,3 +116,32 @@ def test_an_unreachable_model_shows_an_error(client, monkeypatch):
     upload(client, monthly_csv(range(1, 4)))
     page = visible_text(client.post("/merchants/suggest", headers={**ME, **HTMX}).text)
     assert "Couldn’t reach the model" in page
+
+
+def charges_at(description, cents, days):
+    lines = ["Date,Description,Amount"] + [f"{day},{description},-{cents / 100:.2f}" for day in days]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def test_each_category_shows_what_was_spent_in_the_period(client):
+    recent, old = months_back(3), [date.today() - timedelta(days=500)]
+    upload(client, charges_at("FRESHMART", 5000, recent + old))
+    upload(client, charges_at("CORNER CAFE", 450, recent), name="b.csv")
+    set_category(client, "Freshmart", "Groceries")
+    set_category(client, "Corner Cafe", "Food & drink")
+
+    page = html.unescape(visible_text(client.get("/merchants", headers=ME).text))
+    assert "Groceries $150" in page and "Food & drink $13.50" in page and "All $164" in page
+    everything = visible_text(client.get("/merchants", params={"period": "all"}, headers=ME).text)
+    assert "Groceries $200" in everything
+
+    groceries = visible_text(client.get("/merchants", params={"category": "Groceries"}, headers=ME).text)
+    assert "$150 on Groceries across 1 merchant in the last 12 months" in groceries
+
+
+def test_changing_a_category_keeps_the_period_and_filter(client):
+    upload(client, charges_at("FRESHMART", 5000, months_back(3)))
+    page = client.post("/merchants/category", headers={**ME, **HTMX},
+                       data={"merchant": "Freshmart", "category": "Groceries", "view_category": "none", "period": "3m"}).text
+    assert 'aria-current="true">3M' in page.replace("\n", "").replace("  ", "")
+    assert "No merchants in this category." in visible_text(page)

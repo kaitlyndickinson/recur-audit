@@ -2,12 +2,32 @@ services:
   app:
     build: .
     restart: unless-stopped
-    # Only this machine can reach the app; Tailscale serve (or your own browser) connects through localhost.
+    # Only this machine can reach the app: your own browser, or the tailscale service below.
     ports: ["127.0.0.1:8000:8000"]
     volumes: ["data:/data"]
     env_file:
       - path: .env
         required: false
 
+  # For a household: the app's own device on your tailnet, https://<TS_HOSTNAME>.<tailnet>.ts.net.
+  # Enabled by COMPOSE_PROFILES=tailnet in .env. It shares the app's network, so it reaches it on localhost.
+  tailscale:
+    image: docker.io/tailscale/tailscale:v1.98.8
+    profiles: [tailnet]
+    restart: unless-stopped
+    network_mode: service:app
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_AUTH_ONCE: "true"  # the key is only needed the first time; the device's identity is kept in the volume
+      TS_HOSTNAME: ${TS_HOSTNAME:-recur-audit}
+      TS_EXTRA_ARGS: --advertise-tags=tag:recur-audit
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale:/var/lib/tailscale
+      - ./tailscale-serve.json:/config/serve.json:ro,Z
+
 volumes:
   data:
+  tailscale:

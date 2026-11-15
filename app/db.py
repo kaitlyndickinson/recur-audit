@@ -213,14 +213,15 @@ def merchant_transactions(conn, owner, merchant) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def merchant_summary(conn, owner) -> list[dict]:
+def merchant_summary(conn, owner, since: date | None = None) -> list[dict]:
+    """Money out per merchant key, only counting charges on or after `since` when it's given."""
     names = merchant_names(conn, owner)
     rows = conn.execute(
         """SELECT merchant_key, COUNT(*) AS charges, -SUM(amount_cents) AS spent_cents,
                   MIN(description) AS example
-           FROM transactions WHERE owner = ? AND amount_cents < 0
+           FROM transactions WHERE owner = ? AND amount_cents < 0 AND (? IS NULL OR posted_on >= ?)
            GROUP BY merchant_key ORDER BY spent_cents DESC""",
-        (owner,),
+        (owner, since and since.isoformat(), since and since.isoformat()),
     )
     return [{**dict(r), "name": names[r["merchant_key"]]} for r in rows]
 

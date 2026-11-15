@@ -1,43 +1,62 @@
 {% extends "base.html" %}
 {% block title %}Merchants · recur-audit{% endblock %}
+{% macro view_url(value, when) %}/merchants?period={{ when }}{% if value %}&amp;category={{ value | urlencode }}{% endif %}{% endmacro %}
+{% macro chip(value, label, cents) %}
+  <a href="{{ view_url(value, period) }}" {% if category == value %}aria-current="true"{% endif %}>{{ label }} <span>{{ cents | money_short }}</span></a>
+{% endmacro %}
 {% block content %}
 <section id="merchants">
   <h1>Merchants</h1>
   <p class="muted">Bank descriptions are cleaned up automatically. Rename any that look wrong. Give two the same name to merge them, or clear a name to undo.</p>
-  {% macro filter_url(value) %}/merchants{% if value %}?category={{ value | urlencode }}{% endif %}{% endmacro %}
 
-  {% if not merchants and not category %}
+  {% if not has_data %}
     <p class="empty muted">Nothing imported yet.</p>
   {% else %}
+  {# Every button below sends these, so the page comes back with the same filter and period. #}
+  <div id="view" hidden>
+    <input name="view_category" value="{{ category }}">
+    <input name="period" value="{{ period }}">
+  </div>
   <div class="merchant-tools">
-    <nav class="filter-chips" aria-label="Category">
-      <a href="{{ filter_url('') }}" {% if not category %}aria-current="true"{% endif %}>All</a>
-      {% for name in categories if counts[name] %}
-        <a href="{{ filter_url(name) }}" {% if category == name %}aria-current="true"{% endif %}>{{ name }} <span>{{ counts[name] }}</span></a>
+    <nav class="pills" aria-label="Time period">
+      {% for key, (label, _) in periods.items() %}
+        <a href="{{ view_url(category, key) }}" {% if key == period %}aria-current="true"{% endif %}>{{ label }}</a>
       {% endfor %}
-      {% if counts.none %}<a href="{{ filter_url('none') }}" {% if category == "none" %}aria-current="true"{% endif %}>Uncategorized <span>{{ counts.none }}</span></a>{% endif %}
     </nav>
     {% if can_suggest and counts.none %}
       {# The whole section shows it's busy, so nothing gets edited while the model answers. #}
-      <button class="button" hx-post="/merchants/suggest" hx-vals='{"filter": {{ category | tojson }}}'
+      <button class="button" hx-post="/merchants/suggest" hx-include="#view"
               hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML"
               hx-indicator="#merchants" hx-disabled-elt="this">
         <span class="idle">Suggest categories</span><span class="busy">Asking the model…</span>
       </button>
     {% endif %}
   </div>
-  <div class="notice busy-note"><p>Categorizing {{ counts.none }} merchant{{ "" if counts.none == 1 else "s" }} with your model. It takes a few seconds, or about a minute if the model was asleep.</p></div>
+  <nav class="filter-chips" aria-label="Category">
+    {{ chip("", "All", all_cents) }}
+    {% for name in categories if counts[name] %}{{ chip(name, name, totals[name]) }}{% endfor %}
+    {% if counts.none %}{{ chip("none", "Uncategorized", totals.none) }}{% endif %}
+  </nav>
+  <div class="notice busy-note"><p>Categorizing your uncategorized merchants with your model. It takes a few seconds, or about a minute if the model was asleep.</p></div>
   {% if error %}<div class="notice error"><p>{{ error }}</p></div>{% endif %}
   {% if suggested is not none %}<div class="notice ok"><p>{{ suggested }}</p></div>{% endif %}
+
+  {% if category %}
+    <p class="category-total">
+      <strong>{{ totals[category] | money_short }}</strong>
+      {{ "uncategorized" if category == "none" else "on " ~ category }}
+      across {{ counts[category] }} merchant{{ "" if counts[category] == 1 else "s" }} {{ periods[period][1] }}
+    </p>
+  {% endif %}
+
   {% if not merchants %}
     <p class="empty muted">No merchants in this category.</p>
   {% else %}
   <ul class="list card">
     {% for m in merchants %}
       <li class="merchant-row">
-        <form hx-post="/merchants/rename" hx-trigger="change" hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
+        <form hx-post="/merchants/rename" hx-trigger="change" hx-include="#view" hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
           <input type="hidden" name="key" value="{{ m.merchant_key }}">
-          <input type="hidden" name="filter" value="{{ category }}">
           <label class="visually-hidden" for="m-{{ loop.index }}">Name for {{ m.example }}</label>
           <input class="inline-input" id="m-{{ loop.index }}" name="name" value="{{ m.name }}" autocomplete="off">
         </form>
@@ -45,7 +64,7 @@
         <div class="merchant-actions">
           <label class="visually-hidden" for="c-{{ loop.index }}">Category for {{ m.name }}</label>
           <select class="chip select category" id="c-{{ loop.index }}" name="category"
-                  hx-post="/merchants/category" hx-vals='{"merchant": {{ m.name | tojson }}, "filter": {{ category | tojson }}}'
+                  hx-post="/merchants/category" hx-vals='{"merchant": {{ m.name | tojson }}}' hx-include="#view"
                   hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
             <option value="">No category</option>
             {% for name in categories %}<option {% if chosen.get(m.name) == name %}selected{% endif %}>{{ name }}</option>{% endfor %}
@@ -53,7 +72,7 @@
           {% if m.name in tracked or m.name not in listed %}
             {% set on = m.name not in tracked %}
             <button class="chip track" hx-post="/merchants/track"
-                    hx-vals='{"merchant": {{ m.name | tojson }}, "on": {{ on | tojson }}, "filter": {{ category | tojson }}}'
+                    hx-vals='{"merchant": {{ m.name | tojson }}, "on": {{ on | tojson }}}' hx-include="#view"
                     hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
               {{ "Add to subscriptions" if on else "Remove from subscriptions" }}</button>
           {% endif %}

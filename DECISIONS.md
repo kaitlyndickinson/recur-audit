@@ -8,7 +8,7 @@ FastAPI rendering Jinja templates, htmx for in-place updates, one hand-written C
 
 ## Identity: Tailscale, no login code
 
-The app is only reachable through the host's `127.0.0.1`; `tailscale serve` publishes it and sets `Tailscale-User-Login`, which the app trusts. Requests without it get a 403, unless `RECUR_AUDIT_LOCAL_USER` is set for a single-person install on your own computer; that must never be set when the app is served to a household. State-changing requests require htmx's `HX-Request` header, which blocks cross-site posts without tokens or cookies. Requests are only answered for `localhost`, `127.0.0.1` and `*.ts.net` hosts, which blocks DNS rebinding. The app owns no passwords or sessions. Settings and secrets come from environment variables or a gitignored `.env`, never the command line.
+The app is only reachable through the host's `127.0.0.1` and its own Tailscale device, whose `serve` sets `Tailscale-User-Login`, which the app trusts. Requests without it get a 403, unless `RECUR_AUDIT_LOCAL_USER` is set for a single-person install on your own computer; that must never be set when the app is served to a household. State-changing requests require htmx's `HX-Request` header, which blocks cross-site posts without tokens or cookies. Requests are only answered for `localhost`, `127.0.0.1` and `*.ts.net` hosts, which blocks DNS rebinding. The app owns no passwords or sessions. Settings and secrets come from environment variables or a gitignored `.env`, never the command line.
 
 ## Each person sees only their own data
 
@@ -41,4 +41,4 @@ Dark only: ink-navy, cyan accent, pink for price increases. Space Grotesk for te
 
 ## Deploy: one container
 
-`Dockerfile` and `compose.yaml` are the only install, so it runs the same on Linux, Windows, macOS and NAS boxes, with Docker or Podman. The app runs as a non-root user, keeps data in a named volume at `/data`, and is published on `127.0.0.1:8000` only. Settings and secrets come from a gitignored `.env`. `tailscale serve` on the host publishes it on its own HTTPS port; never `funnel`.
+`Dockerfile` and `compose.yaml` are the only install, so it runs the same on Linux, Windows, macOS and NAS boxes, with Docker or Podman. The app runs as a non-root user, keeps data in a named volume at `/data`, and is published on `127.0.0.1:8000` only. Settings and secrets come from a gitignored `.env`. For a household, a Tailscale container (compose profile `tailnet`) shares the app's network and serves it as its own device, `https://recur-audit.<tailnet>.ts.net`, so it has a name instead of a port on the host. The device is tagged `tag:recur-audit`, and the access rules let only its users reach it on 443 and let it reach nothing, so a compromised app can't get onto the rest of the tailnet. Never `funnel`.

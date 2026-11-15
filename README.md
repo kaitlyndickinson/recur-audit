@@ -23,14 +23,18 @@ Requires Docker or Podman. Settings go in a `.env` file next to `compose.yaml`.
 
 **On your own computer** (start here). Put `RECUR_AUDIT_LOCAL_USER=you@example.com` in `.env`, run `docker compose up -d --build`, and open http://localhost:8000. That's it.
 
-**For a household.** On an always-on machine with [Tailscale](https://tailscale.com), leave `RECUR_AUDIT_LOCAL_USER` out of `.env`, then:
+**For a household.** The app gets its own device on your [Tailscale](https://tailscale.com) network, at `https://recur-audit.<tailnet>.ts.net`. Everyone needs their own Tailscale user, which is how the app tells people apart.
 
-```sh
-docker compose up -d --build
-tailscale serve --bg --https=8443 http://127.0.0.1:8000
-```
+1. In the Tailscale admin console, add `"tag:recur-audit": ["autogroup:admin"]` under `tagOwners`, and a grant letting the people who use it reach `tag:recur-audit` on `tcp:443`. Nothing should grant the tag access to anything, so the app's device can't reach the rest of your network.
+2. Generate an auth key: not reusable, not ephemeral, pre-approved, tagged `tag:recur-audit`.
+3. In `.env`, leave `RECUR_AUDIT_LOCAL_USER` out and add:
 
-Open `https://<machine>.<tailnet>.ts.net:8443`. Tailscale tells the app who each person is, so everyone needs their own Tailscale user. Use `serve`, never `funnel`, which would put the app on the public internet.
+   ```sh
+   COMPOSE_PROFILES=tailnet
+   TS_AUTHKEY=tskey-auth-...   # only used the first time; delete it afterwards
+   RECUR_AUDIT_PUBLIC_URL=https://recur-audit.<tailnet>.ts.net
+   ```
+4. `docker compose up -d --build`, then open `https://recur-audit.<tailnet>.ts.net`. Set `TS_HOSTNAME` for a different name.
 
 - Update: `git pull && docker compose up -d --build --force-recreate` (Podman keeps the old container without it)
 - Logs: `docker compose logs -f`
@@ -48,7 +52,7 @@ You use your own Google Cloud project, so no one else's app ever touches your ma
    ```sh
    GOOGLE_CLIENT_ID=...
    GOOGLE_CLIENT_SECRET=...
-   RECUR_AUDIT_PUBLIC_URL=https://<machine>.<tailnet>.ts.net:8443   # only when served through Tailscale
+   RECUR_AUDIT_PUBLIC_URL=https://recur-audit.<tailnet>.ts.net   # only when served through Tailscale
    ```
 
 How access works:

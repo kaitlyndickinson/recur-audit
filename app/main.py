@@ -260,59 +260,74 @@ def delete_import(request: Request, import_id: int = Form(), user=Depends(curren
 
 
 @app.get("/merchants", response_class=HTMLResponse)
-def merchants(request: Request, category: str = "", user=Depends(current_user), conn=Depends(get_db)):
-    return _render_merchants(request, user, conn, category)
+def merchants(request: Request, category: str = "", period: str = "12m",
+              user=Depends(current_user), conn=Depends(get_db)):
+    return _render_merchants(request, user, conn, category, period)
 
 
-def _render_merchants(request, user, conn, category="", error=None, suggested=None):
+def _render_merchants(request, user, conn, category, period, error=None, suggested=None):
     """`category` filters the list: one of CATEGORIES, "none" for uncategorized, or empty for all."""
-    rows = db.merchant_summary(conn, user)
+    if period not in PERIODS:
+        period = "12m"
+    today = date.today()
+    since = None if period == "all" else _last_months(today, _month_count(period, today, []))[0]
+    rows = db.merchant_summary(conn, user, since)
     chosen = db.categories(conn, user)
     tracked = db.tracked(conn, user)
     listed = {sub.merchant for sub in detect(db.spending_by_merchant(conn, user), tracked)}
-    counts = {name: sum(chosen.get(r["name"]) == name for r in rows) for name in categories.CATEGORIES}
-    counts["none"] = sum(r["name"] not in chosen for r in rows)
-    if category not in counts:
+    totals = {name: 0 for name in [*categories.CATEGORIES, "none"]}
+    counts = dict(totals)
+    for row in rows:
+        group = chosen.get(row["name"], "none")
+        totals[group] += row["spent_cents"]
+        counts[group] += 1
+    if category not in totals:
         category = ""
-    if category:
-        rows = [r for r in rows if chosen.get(r["name"], "none") == category]
+    shown = [r for r in rows if chosen.get(r["name"], "none") == category] if category else rows
     return templates.TemplateResponse(request, "merchants.html", {
-        "user": user, "merchants": rows, "chosen": chosen, "categories": categories.CATEGORIES,
-        "counts": counts, "category": category, "can_suggest": categories.configured(), "error": error,
-        "suggested": suggested, "tracked": tracked, "listed": listed})
+        "user": user, "merchants": shown, "chosen": chosen, "categories": categories.CATEGORIES,
+        "totals": totals, "counts": counts, "all_cents": sum(totals.values()), "category": category,
+        "period": period, "periods": PERIODS, "has_data": bool(db.accounts(conn, user)),
+        "can_suggest": categories.configured(), "error": error, "suggested": suggested,
+        "tracked": tracked, "listed": listed})
 
 
+# The Merchants page's buttons send the category filter and period being viewed, so the page comes back the same.
 @app.post("/merchants/rename", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
-def rename(request: Request, key: str = Form(), name: str = Form(""), filter: str = Form(""),
+def rename(request: Request, key: str = Form(), name: str = Form(""),
+           view_category: str = Form(""), period: str = Form("12m"),
            user=Depends(current_user), conn=Depends(get_db)):
     if key not in db.merchant_names(conn, user):
         raise HTTPException(404, "Unknown merchant")
     db.rename_merchant(conn, user, key, name)
-    return _render_merchants(request, user, conn, filter)
+    return _render_merchants(request, user, conn, view_category, period)
 
 
 @app.post("/merchants/category", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
-def set_category(request: Request, merchant: str = Form(), category: str = Form(""), filter: str = Form(""),
+def set_category(request: Request, merchant: str = Form(), category: str = Form(""),
+                 view_category: str = Form(""), period: str = Form("12m"),
                  user=Depends(current_user), conn=Depends(get_db)):
     if category and category not in categories.CATEGORIES:
         raise HTTPException(400, "Unknown category")
     if merchant not in db.merchant_names(conn, user).values():
         raise HTTPException(404, "Unknown merchant")
     db.set_categories(conn, user, {merchant: category})
-    return _render_merchants(request, user, conn, filter)
+    return _render_merchants(request, user, conn, view_category, period)
 
 
 @app.post("/merchants/track", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
-def track(request: Request, merchant: str = Form(), on: bool = Form(), filter: str = Form(""),
+def track(request: Request, merchant: str = Form(), on: bool = Form(),
+          view_category: str = Form(""), period: str = Form("12m"),
           user=Depends(current_user), conn=Depends(get_db)):
     if merchant not in db.merchant_names(conn, user).values():
         raise HTTPException(404, "Unknown merchant")
     db.set_tracked(conn, user, merchant, on)
-    return _render_merchants(request, user, conn, filter)
+    return _render_merchants(request, user, conn, view_category, period)
 
 
 @app.post("/merchants/suggest", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
-def suggest_categories(request: Request, filter: str = Form(""), user=Depends(current_user), conn=Depends(get_db)):
+def suggest_categories(request: Request, view_category: str = Form(""), period: str = Form("12m"),
+                       user=Depends(current_user), conn=Depends(get_db)):
     if not categories.configured():
         raise HTTPException(400, "No model is set up on this server.")
     chosen = db.categories(conn, user)
@@ -324,12 +339,13 @@ def suggest_categories(request: Request, filter: str = Form(""), user=Depends(cu
         found = categories.suggest(list(todo.items()))
     except categories.ModelUnavailable as error:
         log.warning("category suggestions failed: %s", error)
-        return _render_merchants(request, user, conn, filter, error="Couldn’t reach the model. Is it running?")
+        return _render_merchants(request, user, conn, view_category, period,
+                                 error="Couldn’t reach the model. Is it running?")
     db.set_categories(conn, user, found)
     message = f"Suggested a category for {len(found)} merchant{'' if len(found) == 1 else 's'}."
     if len(found) < len(todo):
         message += f" {len(todo) - len(found)} still need one; pick those yourself."
-    return _render_merchants(request, user, conn, filter, suggested=message)
+    return _render_merchants(request, user, conn, view_category, period, suggested=message)
 
 
 # ---------- Email cleanup ----------
