@@ -1,3 +1,4 @@
+import secrets
 import sqlite3
 from collections import Counter, defaultdict
 from datetime import date
@@ -40,6 +41,42 @@ CREATE TABLE IF NOT EXISTS merchant_aliases (
     PRIMARY KEY (owner, merchant_key)
 );
 
+CREATE TABLE IF NOT EXISTS mail_accounts (
+    owner TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    connected_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ties a Google sign-in redirect back to the person who started it.
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS mail_senders (
+    owner TEXT NOT NULL,
+    address TEXT NOT NULL,
+    name TEXT NOT NULL,
+    messages INTEGER NOT NULL,
+    last_seen TEXT NOT NULL,
+    category TEXT NOT NULL,
+    latest_subject TEXT NOT NULL,
+    unsubscribe_url TEXT,
+    one_click INTEGER NOT NULL,
+    costs_money INTEGER NOT NULL DEFAULT 0,
+    proposed TEXT NOT NULL,
+    action TEXT NOT NULL,
+    result TEXT,
+    PRIMARY KEY (owner, address)
+);
+
+CREATE TABLE IF NOT EXISTS mail_settings (
+    owner TEXT PRIMARY KEY,
+    new_address TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS subscription_marks (
     owner TEXT NOT NULL,
     merchant TEXT NOT NULL,
@@ -57,6 +94,14 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    if "costs_money" not in {c["name"] for c in conn.execute("PRAGMA table_info(mail_senders)")}:
+        conn.execute("ALTER TABLE mail_senders ADD COLUMN costs_money INTEGER NOT NULL DEFAULT 0")
+    # Email actions were renamed (move_new, move_spam, trash); convert scans saved under the old names.
+    conn.execute("""UPDATE mail_senders SET
+        action = CASE action WHEN 'move_new' THEN 'move' WHEN 'move_spam' THEN 'keep' WHEN 'trash' THEN 'spam' ELSE action END,
+        proposed = CASE proposed WHEN 'move_new' THEN 'move' WHEN 'move_spam' THEN 'keep' WHEN 'trash' THEN 'spam' ELSE proposed END
+        WHERE action IN ('move_new', 'move_spam', 'trash') OR proposed IN ('move_new', 'move_spam', 'trash')""")
+    conn.commit()
     return conn
 
 
@@ -202,4 +247,96 @@ def set_mark(conn, owner, merchant, status) -> None:
                ON CONFLICT (owner, merchant) DO UPDATE SET status = excluded.status, updated_at = datetime('now')""",
             (owner, merchant, status),
         )
+    conn.commit()
+
+
+def save_mail_account(conn, owner, email, refresh_token) -> None:
+    conn.execute(
+        """INSERT INTO mail_accounts (owner, email, refresh_token) VALUES (?, ?, ?)
+           ON CONFLICT (owner) DO UPDATE SET email = excluded.email, refresh_token = excluded.refresh_token,
+                                             connected_at = datetime('now')""",
+        (owner, email, refresh_token),
+    )
+    conn.commit()
+
+
+def mail_account(conn, owner) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM mail_accounts WHERE owner = ?", (owner,)).fetchone()
+
+
+def delete_mail_account(conn, owner) -> None:
+    conn.execute("DELETE FROM mail_accounts WHERE owner = ?", (owner,))
+    conn.commit()
+
+
+def new_oauth_state(conn, owner, prefix="") -> str:
+    state = prefix + secrets.token_urlsafe(24)
+    conn.execute("DELETE FROM oauth_states WHERE created_at < datetime('now', '-10 minutes')")
+    conn.execute("INSERT INTO oauth_states (state, owner) VALUES (?, ?)", (state, owner))
+    conn.commit()
+    return state
+
+
+def take_oauth_state(conn, state, owner) -> bool:
+    """True once for a state this owner created in the last 10 minutes."""
+    taken = conn.execute(
+        "DELETE FROM oauth_states WHERE state = ? AND owner = ? AND created_at >= datetime('now', '-10 minutes')",
+        (state, owner),
+    ).rowcount
+    conn.commit()
+    return bool(taken)
+
+
+def save_senders(conn, owner, senders: list[tuple]) -> None:
+    """Replace this owner's senders with a fresh scan, keeping any action they chose by hand and past results."""
+    previous = {r["address"]: r for r in conn.execute("SELECT * FROM mail_senders WHERE owner = ?", (owner,))}
+    conn.execute("DELETE FROM mail_senders WHERE owner = ?", (owner,))
+    for sender, proposed in senders:
+        old = previous.get(sender.address)
+        chosen = old["action"] if old and old["action"] != old["proposed"] else proposed
+        conn.execute(
+            """INSERT INTO mail_senders (owner, address, name, messages, last_seen, category, latest_subject,
+                                         unsubscribe_url, one_click, costs_money, proposed, action, result)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (owner, sender.address, sender.name, sender.messages, sender.last_seen.isoformat(), sender.category,
+             sender.subjects[0] if sender.subjects else "", sender.unsubscribe_url, sender.one_click,
+             sender.costs_money, proposed, chosen, old["result"] if old else None),
+        )
+    conn.commit()
+
+
+def mail_senders(conn, owner) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM mail_senders WHERE owner = ? ORDER BY messages DESC, address", (owner,)).fetchall()
+
+
+def set_sender_action(conn, owner, address, action) -> None:
+    conn.execute("UPDATE mail_senders SET action = ? WHERE owner = ? AND address = ?", (action, owner, address))
+    conn.commit()
+
+
+def set_sender_result(conn, owner, address, result) -> None:
+    conn.execute("UPDATE mail_senders SET result = ? WHERE owner = ? AND address = ?", (result, owner, address))
+    conn.commit()
+
+
+def forget_mail(conn, owner) -> None:
+    """Disconnecting removes the sign-in and everything the scan stored."""
+    conn.execute("DELETE FROM mail_accounts WHERE owner = ?", (owner,))
+    conn.execute("DELETE FROM mail_senders WHERE owner = ?", (owner,))
+    conn.execute("DELETE FROM mail_settings WHERE owner = ?", (owner,))
+    conn.commit()
+
+
+def new_address(conn, owner) -> str | None:
+    row = conn.execute("SELECT new_address FROM mail_settings WHERE owner = ?", (owner,)).fetchone()
+    return row["new_address"] if row else None
+
+
+def set_new_address(conn, owner, address: str) -> None:
+    if address:
+        conn.execute("""INSERT INTO mail_settings (owner, new_address) VALUES (?, ?)
+                        ON CONFLICT (owner) DO UPDATE SET new_address = excluded.new_address""", (owner, address))
+    else:
+        conn.execute("DELETE FROM mail_settings WHERE owner = ?", (owner,))
     conn.commit()

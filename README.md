@@ -1,86 +1,67 @@
-# household-app
+# recur-audit
 
-A small self-hosted app for a household to track its finances together, replacing spreadsheet trackers. Each person signs in through Tailscale and sees their own data.
+Finds the recurring charges in your bank statements and cleans up an old Gmail inbox.
 
-## Phase 1: find subscriptions to clean up
+It's local first. It runs on your own computer, everything lives in one SQLite file, and nothing leaves your machine unless you connect Gmail, and even then only email headers are read. The same container runs on an always-on box behind Tailscale, and everyone only sees their own data.
 
-- Import bank and card exports (CSV, OFX/QFX). Overlapping exports are deduplicated, and the original files are kept untouched.
-- Detect recurring charges: regular spacing between charges plus fairly stable amounts.
-- Show cadence, latest amount, yearly cost, price increases, and charges that look like they've stopped, plus a 12-month spend chart.
-- Mark each one keep, cancel, cancelled, or not a subscription.
-- Rename or merge merchants when the automatic cleanup of bank descriptions gets it wrong.
+## Features
 
-## Phase 2: Gmail, for an email migration
+- Import statements as CSV, OFX or QFX, several at a time. Rows repeated across overlapping statements are skipped.
+- Detect recurring charges, with cost, price increases and charges that stopped. Filter by period and account.
+- Rename and merge merchants.
+- Scan the last 1, 3 or 12 months of a Gmail inbox's headers, and sort each sender into move to your new address, unsubscribe & trash, spam or keep. Senders billing you on repeat are grouped at the top. Clean up does the rest in one step; message bodies are never read.
 
-- Read-only access to sender and subject only (no message bodies).
-- On an old address: find which services still send there, so you know what to move to the new address, cancel, or just let go.
+## Run it
 
-## Running it
+Requires Docker or Podman. Settings go in a `.env` file next to `compose.yaml`.
 
-Requires Python 3.10+.
+**On your own computer** (start here). Put `RECUR_AUDIT_LOCAL_USER=you@example.com` in `.env`, run `docker compose up -d --build`, and open http://localhost:8000. That's it.
+
+**For a household.** On an always-on machine with [Tailscale](https://tailscale.com), leave `RECUR_AUDIT_LOCAL_USER` out of `.env`, then:
+
+```sh
+docker compose up -d --build
+tailscale serve --bg --https=8443 http://127.0.0.1:8000
+```
+
+Open `https://<machine>.<tailnet>.ts.net:8443`. Tailscale tells the app who each person is, so everyone needs their own Tailscale user. Use `serve`, never `funnel`, which would put the app on the public internet.
+
+- Update: `git pull && docker compose up -d --build`
+- Logs: `docker compose logs -f`
+- Back up: `docker compose cp app:/data ./backup`
+
+## Gmail
+
+You use your own Google Cloud project, so no one else's app ever touches your mail.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the Gmail API.
+2. Create credentials for **User data** (not application data). On the consent screen add two scopes, `gmail.metadata` and `gmail.modify`, and add each address you'll connect as a **test user**. Leave it in testing.
+3. Make the OAuth client a **Web application**. Its redirect URI is the address you open the app at plus `/email/callback`, such as `http://localhost:8000/email/callback`.
+4. Add the keys to `.env` and run `docker compose up -d` again:
+
+   ```sh
+   GOOGLE_CLIENT_ID=...
+   GOOGLE_CLIENT_SECRET=...
+   RECUR_AUDIT_PUBLIC_URL=https://<machine>.<tailnet>.ts.net:8443   # only when served through Tailscale
+   ```
+
+How access works:
+
+- **Connect** saves a read-only sign-in (`gmail.metadata`). Google itself blocks it from reading messages; it only sees senders, subjects and labels.
+- **Clean up** asks you to approve `gmail.modify` once, for that run. The app keeps it in memory only, never saves it, and Google expires it within an hour.
+- **Disconnect** revokes everything and deletes what the scan stored.
+
+Google warns the app is unverified when you connect. That's expected, since it's your own app; continue past it. Sign-ins last 7 days while the app is in testing. Clean up really unsubscribes and moves mail to Trash or Spam, so try it on a throwaway address first.
+
+## Development
 
 ```sh
 python -m venv .venv
-.venv/Scripts/pip install -e ".[dev]"        # macOS/Linux: .venv/bin/pip
-
-# Local development: the env var stands in for the Tailscale identity header
-HOUSEHOLD_DEV_USER=you@example.com .venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest
+.venv/bin/uvicorn app.main:app --port 8000
 ```
 
-On Windows PowerShell, set the variables first: `$env:HOUSEHOLD_DEV_USER="you@example.com"; .venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000`.
+Settings come from the same `.env` file as Docker (`RECUR_AUDIT_LOCAL_USER=you@example.com` at minimum), so secrets never go on the command line. Open the app at http://localhost:8000; other hostnames are refused. Without Docker, data goes in `data/`. `python scripts/make_demo_data.py` writes sample statements to `data/demo/`; run with `RECUR_AUDIT_DATA_DIR=data/demo` to use them.
 
-### Demo data
-
-`python scripts/make_demo_data.py` writes synthetic exports to `data/demo/`. Set `HOUSEHOLD_DATA_DIR=data/demo` to keep the demo database separate from the real one.
-
-| File | Import as | Shows |
-|---|---|---|
-| `demo-card.csv` | you, account "Card" | Subscriptions, a price increase, one that stopped, a yearly charge |
-| `demo-card-recent.csv` | you, account "Card" | A later download of the same card: every row is skipped as already imported |
-| `demo-checking.csv` | you, account "Checking" | Debit/credit columns; rent to mark "Not a subscription"; an electric bill too variable to count |
-| `demo-partner.ofx` | a second person | OFX import, and that each person only sees their own data |
-
-### Trying it as two people
-
-Locally, `HOUSEHOLD_DEV_USER` decides who you are. Run two servers on the same data, one per person, and open each in its own tab:
-
-```sh
-HOUSEHOLD_DATA_DIR=data/demo HOUSEHOLD_DEV_USER=you@example.com .venv/Scripts/uvicorn app.main:app --port 8000
-HOUSEHOLD_DATA_DIR=data/demo HOUSEHOLD_DEV_USER=partner@example.com .venv/Scripts/uvicorn app.main:app --port 8001
-```
-
-On the server there's no env var: each request carries the Tailscale login of whoever's device sent it.
-
-### On the server
-
-On the Linux machine that holds the real data, clone to `~/dev/projects/household-app` and run the app as a systemd user service:
-
-```sh
-deploy/install.sh                                   # rerun after each git pull
-systemctl --user status household-app
-journalctl --user -u household-app -f
-```
-
-The service listens on `127.0.0.1:8000`, keeps its data in the checkout's `data/`, and creates files readable only by your user. User services stop when you log out unless lingering is on (`loginctl enable-linger`); the script tells you if it's off.
-
-### On your phones
-
-The app only listens on localhost. Publish it to your tailnet on its own HTTPS port, so it doesn't replace anything already served on 443:
-
-```sh
-tailscale serve --bg --https=8443 http://127.0.0.1:8000
-tailscale serve status    # check nothing else got remapped
-```
-
-Then open `https://<machine>.<tailnet>.ts.net:8443` from any device signed in to the tailnet. Use `serve`, never `funnel`: funnel publishes to the whole internet. The app relies on Tailscale's `Tailscale-User-Login` header to know who's asking. Adding each person as a user on the tailnet is the dependable way to get it; if someone gets a 403, that header is missing. Don't set `HOUSEHOLD_DEV_USER` on the server.
-
-## Data
-
-Everything lives in `data/` (gitignored): `household.db` and `raw/` holds the original exports. Back up by copying the folder. Keep it out of cloud-synced folders and use full-disk encryption on the host.
-
-## Open questions
-
-- Shared finances: what's shared vs. solo, and how both people add things.
-- Phase 2 Gmail integration details.
-
-Decisions and their reasons are in [DECISIONS.md](DECISIONS.md).
+Design notes: [DECISIONS.md](DECISIONS.md).

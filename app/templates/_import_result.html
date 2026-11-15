@@ -1,13 +1,17 @@
-{% if error %}
-  <div class="notice error">
-    <strong>Couldn’t import {{ filename }}</strong>
-    <p>{{ error }}</p>
-  </div>
-{% else %}
-  <div class="notice ok">
-    <strong>Imported {{ filename }}</strong>
-    <p>{{ added }} new transaction{{ "" if added == 1 else "s" }}{% if skipped %}, {{ skipped }} already here{% endif %}.</p>
-    <a href="/">See subscriptions →</a>
-  </div>
+{% for result in results %}
+  {% if result.error %}
+    <div class="notice error">
+      <strong>Couldn’t import{% if result.filename %} {{ result.filename }}{% endif %}</strong>
+      <p>{{ result.error }}</p>
+    </div>
+  {% else %}
+    <div class="notice ok">
+      <strong>Imported {{ result.filename }}</strong>
+      <p>{{ result.added }} new transaction{{ "" if result.added == 1 else "s" }}{% if result.skipped %}, {{ result.skipped }} already here{% endif %}.</p>
+    </div>
+  {% endif %}
+{% endfor %}
+{% if imports %}
+  <p class="import-next"><a href="/">See subscriptions →</a></p>
   {% with oob = true %}{% include "_imports.html" %}{% endwith %}
 {% endif %}

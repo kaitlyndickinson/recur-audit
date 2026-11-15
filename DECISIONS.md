@@ -1,88 +1,40 @@
 # Decisions
 
-## Stack: FastAPI + Jinja templates + htmx
+How the app is built and why. Edit an entry when it changes; this describes the current state, not history.
 
-Python backend that renders HTML on the server, with htmx for in-place updates and one hand-written CSS file.
+## Stack
 
-**Why:** Least code and fewest moving parts for a small self-hosted app. One language, no JS build step, and the data processing (parsing exports, detecting recurring charges) is natural in Python.
+FastAPI rendering Jinja templates, htmx for in-place updates, one hand-written CSS file, stdlib `sqlite3` with plain SQL in `app/db.py`. One language, no JS build, nothing to administer; backup is copying one folder. httpx is the only HTTP client (Google and unsubscribe links), with no Google libraries.
 
-**Rules out:** A separate single-page frontend (React/Vite), a JS build toolchain, and reusing another project's stack.
+## Identity: Tailscale, no login code
 
-## Auth: Tailscale identity, no login code in the app
+The app is only reachable through the host's `127.0.0.1`; `tailscale serve` publishes it and sets `Tailscale-User-Login`, which the app trusts. Requests without it get a 403, unless `RECUR_AUDIT_LOCAL_USER` is set for a single-person install on your own computer; that must never be set when the app is served to a household. State-changing requests require htmx's `HX-Request` header, which blocks cross-site posts without tokens or cookies. Requests are only answered for `localhost`, `127.0.0.1` and `*.ts.net` hosts, which blocks DNS rebinding. The app owns no passwords or sessions. Settings and secrets come from environment variables or a gitignored `.env`, never the command line.
 
-The app listens on `127.0.0.1` only. `tailscale serve` publishes it on the tailnet and sets the `Tailscale-User-Login` header, which the app trusts as the user's identity. Requests without it get a 403. State-changing requests also require htmx's `HX-Request` header, which blocks cross-site form posts (CSRF) without tokens or cookies.
+## Each person sees only their own data
 
-**Why:** Hand-rolled auth is a liability for an app holding financial data. Tailscale gives device-level access control and identity-provider sign-in (with MFA) without the app owning passwords or sessions. Traffic is end-to-end encrypted; Tailscale's coordination servers never see app data.
+Every row has an `owner` (the Tailscale login) and every query filters on it: statements, subscriptions, merchant names, email cleanup. There's no shared or combined view.
 
-**Rules out:** Exposing the app on the LAN or internet directly, any access path where Tailscale doesn't set the identity header (those requests get a 403; check how a user reached through node sharing appears before relying on sharing), and passwords, sessions or OAuth in the app.
+## Statements
 
-## Every row has an owner
+Uploaded files are stored byte-for-byte at `data/raw/<sha256>.<ext>`; cleaning happens only on parsed rows. The same file can't be imported twice, and rows repeated across overlapping statements are skipped by `(owner, account, date, amount, description, n-th occurrence in the file)`. Deleting a statement removes its transactions and stored file (unless someone else imported the same file), then re-reads the remaining files so shared rows survive.
 
-Imports, transactions, merchant names and subscription statuses are all keyed by `owner` (the Tailscale login), and every query filters on it.
+## Merchants and subscriptions
 
-**Why:** Each person brings their own bank data now, and shared finances may come later. Owning rows from day one means "shared" becomes a visibility setting rather than a data migration.
+`merchants.merchant_key()` cleans bank descriptions; renames on the Merchants page override it, and giving two keys one name merges them. Subscription detection is plain math with thresholds as constants in `app/recurring.py`: 3+ charges, regular gaps (weekly to yearly, ±20%), stable amounts (75% within 25%). No AI sees transaction data.
 
-**Rules out:** One combined dataset that everyone sees.
+## Email cleanup
 
-## SQLite via the standard library, no ORM
+Two separate Google permissions, so the saved credential can never read your mail:
 
-One file at `data/household.db`, accessed with `sqlite3` and plain SQL in `app/db.py`.
+- **Read** (`gmail.metadata`): the only sign-in that's saved, as a refresh token in the database. Google itself limits it to headers and labels; it can't fetch bodies or search, so the scan pages through the mailbox newest first and stops at the chosen period (1, 3 or 12 months; 3 by default). Gmail's budget is 6,000 quota units a minute per mailbox and each header read costs 20, about 300 emails a minute, so calls are paced by cost to 90% of it.
+- **Write** (`gmail.modify`): requested when you click Clean up, with `access_type=online` so Google issues no refresh token. The access token is held in memory by that one job and expires within an hour. It's never revoked early, because Google revokes every grant for the project at once, which would also disconnect the read sign-in. Approval from a different account than the connected one is refused.
 
-**Why:** Two users, nothing to run or administer. Backup means copying a file.
+Each sender gets one of four actions (`app/mail.py`, provider-neutral rules): **Move to** your new address (a checklist you tick Done; changing your email at a service can't be automated), **Unsubscribe & trash**, **Spam** (moved to Spam; only RFC 8058 one-click senders also get unsubscribed, as Gmail does), or **Keep**. Senders billing you on repeat are grouped under **$ Charging you**: at least 2 subjects with billing phrases (receipt, invoice, renewal, autopay, payment received) from a sender Gmail doesn't file as marketing. Prices and words like "subscription" alone don't count, since ads are full of them. Clean up carries out the unsubscribe, trash and spam actions. It never sends mail or deletes permanently. Unsubscribe URLs come from emails, so the app only POSTs to public HTTPS hosts, never private, loopback or tailnet addresses. Disconnecting revokes access and deletes what the scan stored.
 
-**Rules out:** Postgres and an ORM, for now. Revisit if we ever need concurrent writers at scale.
+## Look
 
-## Merchant names: automatic cleanup plus an editable name table
+Dark only: ink-navy, cyan accent, pink for price increases. Space Grotesk for text and JetBrains Mono for amounts, dates and labels, served from `app/static/fonts/` (SIL Open Font License), never a CDN.
 
-`merchants.merchant_key()` strips processor prefixes, dates, reference numbers, state codes and bank noise words. In the Merchants page you can rename any key; giving two keys the same name merges them. Your names always beat the automatic ones.
+## Deploy: one container
 
-**Why:** Bank descriptions are too messy for rules alone, and fixing a grouping shouldn't require a code change.
-
-**Rules out:** Regex-only rules and AI-based merchant matching.
-
-## Recurring-charge detection is plain math
-
-A merchant is a subscription when it has:
-- at least 3 charges;
-- a median gap within ±20% of weekly, biweekly, monthly, quarterly or yearly, with at least 75% of gaps within that tolerance;
-- at least 75% of charges within 25% of the median amount. The 75% leaves room for a price hike.
-
-A price change is flagged only when a fixed price (two or more equal charges) changed by more than 2% within the last year, so variable bills don't trigger it. A subscription "looks stopped" after 1.5 periods without a charge. Thresholds are constants in `app/recurring.py`.
-
-**Why:** Transparent, testable, and no data leaves the machine.
-
-**Rules out:** Sending transactions to any AI model for detection or analysis.
-
-## No AI in Phase 1
-
-The analysis is computed in the app. A self-hosted model on the tailnet (OpenAI-compatible API behind Open WebUI) could later power an optional "explain this" feature, but the app must keep working without it.
-
-**Why:** Financial data stays on hardware we control, and the core features shouldn't depend on a model being up.
-
-**Rules out:** Cloud LLM APIs for anything that sees transaction data.
-
-## Raw imports are kept untouched
-
-Each uploaded file is stored byte-for-byte at `data/raw/<sha256>.<ext>` and never modified. Cleaning happens only on the parsed rows in the database. The same file can't be imported twice. Rows repeated across overlapping exports are skipped by a unique key, `(owner, account, date, amount, description, n-th occurrence in the file)`.
-
-Each person can delete their own imports. Deleting removes the transactions that import added and its stored file (unless someone else imported the same file), then re-reads the remaining stored files so rows they share with it aren't lost. Keep/cancel marks and merchant names stay.
-
-**Why:** Imports can always be replayed or audited, and re-importing overlapping date ranges is safe. Deleting a wrong or unwanted statement has to actually remove it, not just hide it.
-
-**Rules out:** Editing transactions in place, for now, and soft-deleting imports.
-
-## Deploy: a systemd user service, no container
-
-`deploy/install.sh` makes a venv in the checkout and links `deploy/household-app.service` as a user unit, which runs uvicorn on `127.0.0.1:8000` with `UMask=0077`. `tailscale serve` publishes it on its own HTTPS port.
-
-**Why:** It's one Python process with a SQLite file. A user service matches how other self-hosted services on the host run, needs no root, and keeps the data under the user's home with private permissions.
-
-**Rules out:** Containers and a reverse proxy, for now, plus running as root or as a system-wide service.
-
-## Look: dark-only "night shell" theme with vendored fonts
-
-One dark palette (ink-navy, cyan accent, pink for price increases). Space Grotesk for text and JetBrains Mono for every amount, date and label, both served from `app/static/fonts/` under the SIL Open Font License.
-
-**Why:** A finance dashboard with a terminal feel: monospace, fixed-width digits make amounts line up. A single theme is half the CSS to keep consistent.
-
-**Rules out:** A light theme, for now, and loading fonts from a CDN.
+`Dockerfile` and `compose.yaml` are the only install, so it runs the same on Linux, Windows, macOS and NAS boxes, with Docker or Podman. The app runs as a non-root user, keeps data in a named volume at `/data`, and is published on `127.0.0.1:8000` only. Settings and secrets come from a gitignored `.env`. `tailscale serve` on the host publishes it on its own HTTPS port; never `funnel`.

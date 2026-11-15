@@ -1,11 +1,11 @@
 # CLAUDE.md
 
-Shared household app that replaces spreadsheet trackers. See README.md for what it does and DECISIONS.md for what's been decided and why.
+recur-audit: a self-hosted app for finding recurring charges in bank statements and cleaning up an old Gmail inbox. See README.md for what it does and DECISIONS.md for what's been decided and why.
 
 ## Workflow
 
 - Architectural and stack decisions aren't yours to make. If something isn't in DECISIONS.md, propose options and ask.
-- When a decision gets made, add it to DECISIONS.md: the decision, why, and what it rules out.
+- README.md and DECISIONS.md describe the current state only. When something changes, edit or remove what's there instead of appending; no history, no changelog. Keep them short.
 
 ## Code style
 
@@ -25,7 +25,8 @@ Shared household app that replaces spreadsheet trackers. See README.md for what 
 - Never read, open, or copy real financial data (bank exports, the database) unless explicitly asked. Use synthetic data for tests, fixtures, and examples.
 - Bank exports, databases, `.env`, and OAuth tokens never go in git. Check .gitignore covers anything new.
 - Raw imports stay untouched; cleaning and normalizing happens on a copy.
-- Gmail access is read-only, sender and subject only. Never request broader scopes.
+- Gmail: the saved sign-in is `gmail.metadata` only (headers and labels). `gmail.modify` is requested per Clean up with `access_type=online`, kept in memory, never stored. Never read bodies or snippets, send mail, delete permanently, or request broader scopes.
+- Never fetch URLs taken from emails on the server without the private-address check in `app/gmail.py`.
 - Everything is self-hosted. No third-party services that would see financial data.
 
 ## Stack
@@ -35,7 +36,8 @@ Python 3.10+, FastAPI, Jinja templates + htmx (vendored in `app/static/`, no CDN
 ## Commands
 
 - Install: `python -m venv .venv && .venv/Scripts/pip install -e ".[dev]"`
-- Run (dev): `HOUSEHOLD_DEV_USER=dev@example.com .venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000`
-- Demo data: `python scripts/make_demo_data.py`, then run with `HOUSEHOLD_DATA_DIR=data/demo`
+- Run (dev): `.venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000`, with settings in `.env` (at least `RECUR_AUDIT_LOCAL_USER`); shell variables override it
+- Run (container): `docker compose up -d --build`
+- Demo data: `python scripts/make_demo_data.py`, then run with `RECUR_AUDIT_DATA_DIR=data/demo`
 - Test: `.venv/Scripts/python -m pytest`
 - uvicorn `--reload` doesn't reliably restart on Windows; restart the server by hand after changes.

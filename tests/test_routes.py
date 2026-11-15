@@ -20,9 +20,9 @@ def monthly_csv(months: range, description="STREAMFLIX.COM 866-555-0100 CA", amo
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOUSEHOLD_DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("HOUSEHOLD_DEV_USER", raising=False)
-    return TestClient(app)
+    monkeypatch.setenv("RECUR_AUDIT_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("RECUR_AUDIT_LOCAL_USER", raising=False)
+    return TestClient(app, base_url="http://localhost")
 
 
 def visible_text(html: str) -> str:
@@ -234,3 +234,53 @@ def test_changing_a_status_keeps_the_account_filter(client):
     page = client.post("/status", headers={**ME, **HTMX},
                        data={"merchant": "Acme Gym", "status": "keep", "account": "Checking"}).text
     assert "Streamflix" not in page
+
+
+def upload_many(client, files: list[tuple[str, bytes]], account="Card"):
+    return client.post("/import", headers={**ME, **HTMX}, data={"account": account},
+                       files=[("file", (name, content, "text/csv")) for name, content in files])
+
+
+def test_several_statements_import_at_once(client):
+    page = visible_text(upload_many(client, [("jan-mar.csv", monthly_csv(range(1, 4))),
+                                             ("apr-jun.csv", monthly_csv(range(4, 7)))]).text)
+    assert "Imported jan-mar.csv 3 new transactions" in page
+    assert "Imported apr-jun.csv 3 new transactions" in page
+    imports = client.get("/import", headers=ME).text
+    assert "jan-mar.csv" in imports and "apr-jun.csv" in imports
+
+
+def test_a_bad_file_does_not_stop_the_others(client):
+    page = visible_text(upload_many(client, [("broken.csv", b"When,What\n2026-01-01,A\n"),
+                                             ("good.csv", monthly_csv(range(1, 7)))]).text)
+    assert "Couldn’t import broken.csv" in page
+    assert "Imported good.csv 6 new transactions" in page
+
+
+def test_requests_for_other_hosts_are_refused(client):
+    # Blocks DNS rebinding: a web page can't point its own hostname at this app and read it.
+    assert client.get("/", headers={**ME, "Host": "evil.example"}).status_code == 400
+    assert client.get("/static/app.css", headers={"Host": "evil.example"}).status_code == 400
+    for host in ("localhost:8000", "127.0.0.1:8000", "machine.tail1234.ts.net:8443"):
+        assert client.get("/static/app.css", headers={"Host": host}).status_code == 200
+
+
+def test_settings_load_from_a_env_file_without_overriding_the_shell(tmp_path, monkeypatch):
+    import os
+    from app.main import load_env_file
+    env = tmp_path / ".env"
+    env.write_text("# comment\n"
+                   "RECUR_AUDIT_TEST_A=from-file\n"
+                   'RECUR_AUDIT_TEST_B="quoted value"\n'
+                   "\n"
+                   "RECUR_AUDIT_TEST_C=file\n"
+                   "RECUR_AUDIT_TEST_D=http://localhost:8000   # a note\n")
+    for key in ("A", "B", "D"):
+        monkeypatch.setenv(f"RECUR_AUDIT_TEST_{key}", "")  # registered so monkeypatch cleans them up
+        monkeypatch.delenv(f"RECUR_AUDIT_TEST_{key}")
+    monkeypatch.setenv("RECUR_AUDIT_TEST_C", "shell")
+    load_env_file(env)
+    assert os.environ["RECUR_AUDIT_TEST_A"] == "from-file"
+    assert os.environ["RECUR_AUDIT_TEST_B"] == "quoted value"
+    assert os.environ["RECUR_AUDIT_TEST_C"] == "shell"
+    assert os.environ["RECUR_AUDIT_TEST_D"] == "http://localhost:8000"

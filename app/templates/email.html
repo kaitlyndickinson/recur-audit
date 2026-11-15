@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Email · recur-audit{% endblock %}
+{% set descriptions = {
+  "move": "Money, security and services you pay for. Change your email on each one's site, then tick Done.",
+  "unsubscribe": "Newsletters and marketing. Unsubscribes where the sender allows it, then moves their mail to Trash.",
+  "spam": "Junk. Moves their mail to Spam so Gmail learns to filter it. Only verified senders with one-click unsubscribe also get unsubscribed.",
+  "keep": "People and anything else. Left alone.",
+} %}
+{% block content %}
+<section id="email" class="narrow-wide">
+  <h1>Clean up an old inbox</h1>
+  <p class="muted">Connect the address you want to audit. The app reads who's been emailing you lately (sender and subject, never the message itself), suggests what to do with each sender, and does it when you say go.</p>
+
+  {% if error %}
+    <div class="notice error"><strong>Couldn’t finish</strong><p>{{ error }}</p></div>
+  {% endif %}
+
+  {% if not configured %}
+    <div class="card panel">
+      <p><strong>Google sign-in isn't set up on this server yet.</strong></p>
+      <p class="muted">Follow the Gmail section of the README to create the Google sign-in keys, then restart the app.</p>
+    </div>
+  {% elif not account %}
+    <div class="card panel">
+      <p><strong>Connect Gmail</strong></p>
+      <ul class="facts">
+        <li>Connecting lets the app read who sent each email and its subject. Google blocks it from reading the messages.</li>
+        <li>Clean up asks Google once more, just for that run, to move mail to Trash or Spam. That access isn't saved and expires within an hour.</li>
+        <li>Disconnect any time; the app forgets the sign-in and everything it found.</li>
+      </ul>
+      <a class="button primary" href="/email/connect">Connect Gmail</a>
+    </div>
+  {% else %}
+    <div class="account-bar">
+      <span><span class="muted">Connected</span> {{ account.email }}</span>
+      {% if not job %}
+        <form class="scan-form" hx-post="/email/scan">
+          <label class="visually-hidden" for="scan-months">Period to scan</label>
+          <select class="chip select" id="scan-months" name="months"
+                  title="Gmail lets the app read about 270 emails a minute, so shorter periods finish sooner">
+            <option value="1">Last month</option>
+            <option value="3" selected>Last 3 months</option>
+            <option value="12">Last 12 months</option>
+          </select>
+          <button class="chip">{{ "Scan again" if has_senders else "Scan" }}</button>
+        </form>
+      {% endif %}
+      <button class="chip danger" hx-post="/email/disconnect"
+              hx-confirm="Disconnect {{ account.email }}? The app revokes its access and forgets everything it found.">Disconnect</button>
+    </div>
+    <form class="new-address" hx-post="/email/new-address" hx-target="#email" hx-select="#email" hx-swap="outerHTML">
+      <label for="new-address">Your new address</label>
+      <input type="email" id="new-address" name="new_address" value="{{ new_address or '' }}" placeholder="you@newmail.example" autocomplete="email">
+      <button class="chip">Save</button>
+    </form>
+  {% endif %}
+
+  {% if job %}{% include "_email_progress.html" %}{% endif %}
+
+  {% if not job and has_senders %}
+    {% if charging %}
+      <section class="section charging">
+        <h2><span class="dollar">$</span>Charging you <span class="count">{{ charging | length }}</span></h2>
+        <p class="section-desc muted">Senders whose emails keep reading like bills: receipts, invoices, renewals, autopay. Worth a look if you don't recognize one.</p>
+        <ul class="list card">
+          {% for sender in charging %}
+            <li class="sender-row">
+              <span class="sender-name">{{ sender.name }}</span>
+              <span class="sender-meta">{{ sender.address }} · {{ sender.messages }} email{{ "" if sender.messages == 1 else "s" }}</span>
+              <span class="sender-subject"><a href="https://{{ sender.address | website }}" target="_blank" rel="noopener noreferrer">{{ sender.address | website }}</a> <span class="muted">· {{ sender.latest_subject }}</span></span>
+              <span class="sender-controls muted">{{ actions[sender.action] }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    {% set pending = pending_unsubscribe + pending_spam %}
+    {% if pending %}
+      <div class="card panel go">
+        <p>Clean up <strong>{{ pending }}</strong> sender{{ "" if pending == 1 else "s" }}: unsubscribe &amp; trash <strong>{{ pending_unsubscribe }}</strong>, move <strong>{{ pending_spam }}</strong> to Spam.</p>
+        <p class="muted">Change anything below first. Google will ask you to allow it for this run. Trash empties itself after 30 days.</p>
+        <button class="button primary" hx-post="/email/clean"
+                hx-confirm="Unsubscribe and trash {{ pending_unsubscribe }} senders and move {{ pending_spam }} to Spam?">Clean up</button>
+      </div>
+    {% endif %}
+
+    {% for action, label in actions.items() if grouped[action] %}
+      <section class="section">
+        <h2>{{ label }} <span class="count">{{ grouped[action] | length }}</span></h2>
+        <p class="section-desc muted">{{ descriptions[action] }}</p>
+        <ul class="list card">
+          {% for sender in grouped[action] %}
+            <li class="sender-row">
+              <span class="sender-name">{% if sender.address in costs %}<span class="dollar" title="Bills you on repeat">$</span>{% endif %}{{ sender.name }}</span>
+              <span class="sender-meta">{{ sender.address }} · {{ sender.messages }} email{{ "" if sender.messages == 1 else "s" }} · last {{ sender.last_seen | iso | day }}</span>
+              {% if action == "move" %}
+                <span class="sender-subject"><a href="https://{{ sender.address | website }}" target="_blank" rel="noopener noreferrer">{{ sender.address | website }}</a> <span class="muted">· {{ sender.latest_subject }}</span></span>
+              {% else %}
+                <span class="sender-subject muted">{{ sender.latest_subject }}</span>
+              {% endif %}
+              {% if sender.result %}
+                <span class="sender-result">
+                  {{ sender.result }}
+                  {% if sender.result.startswith("Unsubscribe yourself") %}
+                    · <a href="{{ sender.unsubscribe_url }}" target="_blank" rel="noopener noreferrer">open their unsubscribe page</a>
+                  {% endif %}
+                </span>
+              {% else %}
+                <span class="sender-controls">
+                  {% if action == "move" %}
+                    <button class="chip" hx-post="/email/done" hx-vals='{"address": {{ sender.address | tojson }}, "done": true}'
+                            hx-target="#email" hx-select="#email" hx-swap="outerHTML">Done</button>
+                  {% endif %}
+                  <label class="visually-hidden" for="action-{{ loop.index }}-{{ action }}">Action for {{ sender.address }}</label>
+                  <select class="chip select" id="action-{{ loop.index }}-{{ action }}" name="action"
+                          hx-post="/email/action" hx-vals='{"address": {{ sender.address | tojson }}}'
+                          hx-target="#email" hx-select="#email" hx-swap="outerHTML">
+                    {% for value, text in actions.items() %}
+                      <option value="{{ value }}" {% if value == sender.action %}selected{% endif %}>{{ text }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+
+    {% if moved %}
+      <details class="section folded">
+        <summary><h2>Moved <span class="count">{{ moved | length }}</span></h2></summary>
+        <ul class="list card">
+          {% for sender in moved %}
+            <li class="sender-row">
+              <span class="sender-name">{{ sender.name }}</span>
+              <span class="sender-meta">{{ sender.address }}</span>
+              <span class="sender-controls">
+                <button class="chip" hx-post="/email/done" hx-vals='{"address": {{ sender.address | tojson }}, "done": false}'
+                        hx-target="#email" hx-select="#email" hx-swap="outerHTML">Undo</button>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

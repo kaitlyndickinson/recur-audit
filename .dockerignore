@@ -1,0 +1,15 @@
+# Keep data and secrets out of the image.
+data/
+.env
+*.db
+*.csv
+*.ofx
+*.qfx
+.venv/
+.git/
+.claude/
+.pytest_cache/
+*.egg-info/
+__pycache__/
+tests/
+scripts/

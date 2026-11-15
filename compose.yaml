@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # Only this machine can reach the app; Tailscale serve (or your own browser) connects through localhost.
+    ports: ["127.0.0.1:8000:8000"]
+    volumes: ["data:/data"]
+    env_file:
+      - path: .env
+        required: false
+
+volumes:
+  data:

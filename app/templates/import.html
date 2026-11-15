@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Import · Household{% endblock %}
+{% block title %}Import · recur-audit{% endblock %}
 {% block content %}
 <section class="narrow">
   <h1>Import a statement</h1>
@@ -8,9 +8,9 @@
   <form class="card form" hx-post="/import" hx-encoding="multipart/form-data" hx-target="#import-result"
         hx-on::after-request="if (event.detail.successful) this.querySelector('[type=file]').value = ''">
     <label class="field">
-      <span>Statement file</span>
-      <input type="file" name="file" accept=".csv,.ofx,.qfx" required>
-      <small class="muted">CSV, OFX or QFX</small>
+      <span>Statement files</span>
+      <input type="file" name="file" accept=".csv,.ofx,.qfx" multiple required>
+      <small class="muted">CSV, OFX or QFX. Pick several at once if they're from the same account.</small>
     </label>
     <label class="field">
       <span>Which account is it from?</span>

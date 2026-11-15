@@ -1,0 +1,9 @@
+<div class="card panel" hx-get="/email/progress" hx-trigger="every 1s" hx-swap="outerHTML" role="status">
+  {% if job.kind == "scan" %}
+    <p><strong>Scanning your inbox…</strong> <span class="muted">{{ job.done }} emails checked</span></p>
+  {% else %}
+    <p><strong>Cleaning up…</strong> {% if job.total %}<span class="muted">{{ job.done }} of {{ job.total }} senders</span>{% endif %}</p>
+    <div class="progress"><span style="width: {{ (100 * job.done / job.total) if job.total else 0 }}%"></span></div>
+  {% endif %}
+  <p class="muted">You can leave this page; it keeps going.</p>
+</div>
