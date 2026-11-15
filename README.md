@@ -4,6 +4,11 @@ Finds the recurring charges in your bank statements and cleans up an old Gmail i
 
 It's local first. It runs on your own computer, everything lives in one SQLite file, and nothing leaves your machine unless you connect Gmail, and even then only email headers are read. The same container runs on an always-on box behind Tailscale, and everyone only sees their own data.
 
+<p>
+  <img src="docs/dashboard.png" alt="Subscriptions dashboard: spend over the last 12 months, a chart by month, and recurring charges to review" width="49%">
+  <img src="docs/email.png" alt="Email cleanup: senders billing you, and suggested actions for each sender" width="49%">
+</p>
+
 ## Features
 
 - Import statements as CSV, OFX or QFX, several at a time. Rows repeated across overlapping statements are skipped.
