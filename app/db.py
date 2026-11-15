@@ -84,6 +84,13 @@ CREATE TABLE IF NOT EXISTS merchant_categories (
     PRIMARY KEY (owner, merchant)
 );
 
+-- Merchants the person put on the subscription list themselves.
+CREATE TABLE IF NOT EXISTS tracked_merchants (
+    owner TEXT NOT NULL,
+    merchant TEXT NOT NULL,
+    PRIMARY KEY (owner, merchant)
+);
+
 CREATE TABLE IF NOT EXISTS subscription_marks (
     owner TEXT NOT NULL,
     merchant TEXT NOT NULL,
@@ -242,6 +249,23 @@ def rename_merchant(conn, owner, key, new_name) -> None:
            SELECT owner, ?, category FROM merchant_categories WHERE owner = ? AND merchant = ?""",
         (new_name, owner, old_name),
     )
+    conn.execute(
+        """INSERT OR IGNORE INTO tracked_merchants (owner, merchant)
+           SELECT owner, ? FROM tracked_merchants WHERE owner = ? AND merchant = ?""",
+        (new_name, owner, old_name),
+    )
+    conn.commit()
+
+
+def tracked(conn, owner) -> set[str]:
+    return {r["merchant"] for r in conn.execute("SELECT merchant FROM tracked_merchants WHERE owner = ?", (owner,))}
+
+
+def set_tracked(conn, owner, merchant, on: bool) -> None:
+    if on:
+        conn.execute("INSERT OR IGNORE INTO tracked_merchants (owner, merchant) VALUES (?, ?)", (owner, merchant))
+    else:
+        conn.execute("DELETE FROM tracked_merchants WHERE owner = ? AND merchant = ?", (owner, merchant))
     conn.commit()
 
 

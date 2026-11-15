@@ -20,7 +20,7 @@ Uploaded files are stored byte-for-byte at `data/raw/<sha256>.<ext>`; cleaning h
 
 ## Merchants and subscriptions
 
-`merchants.merchant_key()` cleans bank descriptions; renames on the Merchants page override it, and giving two keys one name merges them. Subscription detection is plain math with thresholds as constants in `app/recurring.py`: 3+ charges, regular gaps (weekly to yearly, ±20%), stable amounts (75% within 25%). It judges the latest regular run of charges, as long as that's a third of them, so a move or plan change doesn't hide a subscription. A merchant that bills several plans under one name (Apple, Google Play) is split by exact price and each plan is checked on its own. Monthly-or-longer charges that are regular 6+ times but change in amount, like a card autopay, count as variable bills. No AI is involved in detection.
+`merchants.merchant_key()` cleans bank descriptions; renames on the Merchants page override it, and giving two keys one name merges them. Subscription detection is plain math with thresholds as constants in `app/recurring.py`: 3+ charges, regular gaps (weekly to yearly, ±20%), stable amounts (75% within 25%). It judges the latest regular run of charges, as long as that's a third of them, so a move or plan change doesn't hide a subscription. A merchant that bills several plans under one name (Apple, Google Play) is split by exact price and each plan is checked on its own. Monthly-or-longer charges that are regular 6+ times but change in amount, like a card autopay, count as variable bills. Anything detection misses can be added to the list by hand from the Merchants page; it's shown on the closest cadence. No AI is involved in detection.
 
 ## Categories
 

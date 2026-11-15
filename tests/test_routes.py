@@ -301,3 +301,20 @@ def test_plans_billed_under_one_name_are_listed_and_marked_separately(client):
     assert "To cancel 1" in page
     detail = client.get("/merchant", params={"name": "Apple"}, headers=ME).text
     assert "Apple · $9.99" in detail and "Apple · $2.99" in detail
+
+
+def test_a_merchant_can_be_added_to_subscriptions_and_removed_again(client):
+    upload(client, b"Date,Description,Amount\n2026-01-03,CORNER BARBER,-12.00\n2026-02-09,CORNER BARBER,-13.50\n")
+    assert "Corner Barber" not in client.get("/", headers=ME).text
+    page = client.post("/merchants/track", headers={**ME, **HTMX}, data={"merchant": "Corner Barber", "on": "true"}).text
+    assert "Remove from subscriptions" in page
+    assert "Corner Barber" in client.get("/", params={"period": "all"}, headers=ME).text
+    assert "Corner Barber" not in client.get("/", params={"period": "all"}, headers=PARTNER).text
+
+    client.post("/merchants/track", headers={**ME, **HTMX}, data={"merchant": "Corner Barber", "on": "false"})
+    assert "Corner Barber" not in client.get("/", params={"period": "all"}, headers=ME).text
+
+
+def test_detected_subscriptions_have_no_add_button(client):
+    upload(client, monthly_csv(range(1, 7)))
+    assert "Add to subscriptions" not in client.get("/merchants", headers=ME).text

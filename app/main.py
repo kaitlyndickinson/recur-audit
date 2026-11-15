@@ -118,7 +118,7 @@ def _render_subscriptions(request, user, conn, period, account):
     accounts = db.accounts(conn, user)
     if account not in accounts:
         account = ""
-    subs = detect(db.spending_by_merchant(conn, user, account or None))
+    subs = detect(db.spending_by_merchant(conn, user, account or None), db.tracked(conn, user))
     marks = db.marks(conn, user)
     tracked = [s for s in subs if marks.get(s.name) != "not_subscription"]
     months = _last_months(today, _month_count(period, today, tracked))
@@ -178,7 +178,7 @@ def merchant_detail(request: Request, name: str, user=Depends(current_user), con
         raise HTTPException(404, "No charges for that merchant")
     charges = sorted(db.spending_by_merchant(conn, user).get(name, []), key=lambda c: c.posted_on)
     marks = db.marks(conn, user)
-    subs = [(sub, marks.get(sub.name, "review")) for sub in detect({name: charges})]
+    subs = [(sub, marks.get(sub.name, "review")) for sub in detect({name: charges}, db.tracked(conn, user))]
     heights, ticks = charts.scale([c.amount_cents for c in charges])
     xs, path = charts.step_path(heights)
     return templates.TemplateResponse(request, "merchant.html", {
@@ -268,6 +268,8 @@ def _render_merchants(request, user, conn, category="", error=None, suggested=No
     """`category` filters the list: one of CATEGORIES, "none" for uncategorized, or empty for all."""
     rows = db.merchant_summary(conn, user)
     chosen = db.categories(conn, user)
+    tracked = db.tracked(conn, user)
+    listed = {sub.merchant for sub in detect(db.spending_by_merchant(conn, user), tracked)}
     counts = {name: sum(chosen.get(r["name"]) == name for r in rows) for name in categories.CATEGORIES}
     counts["none"] = sum(r["name"] not in chosen for r in rows)
     if category not in counts:
@@ -277,7 +279,7 @@ def _render_merchants(request, user, conn, category="", error=None, suggested=No
     return templates.TemplateResponse(request, "merchants.html", {
         "user": user, "merchants": rows, "chosen": chosen, "categories": categories.CATEGORIES,
         "counts": counts, "category": category, "can_suggest": categories.configured(), "error": error,
-        "suggested": suggested})
+        "suggested": suggested, "tracked": tracked, "listed": listed})
 
 
 @app.post("/merchants/rename", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
@@ -297,6 +299,15 @@ def set_category(request: Request, merchant: str = Form(), category: str = Form(
     if merchant not in db.merchant_names(conn, user).values():
         raise HTTPException(404, "Unknown merchant")
     db.set_categories(conn, user, {merchant: category})
+    return _render_merchants(request, user, conn, filter)
+
+
+@app.post("/merchants/track", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
+def track(request: Request, merchant: str = Form(), on: bool = Form(), filter: str = Form(""),
+          user=Depends(current_user), conn=Depends(get_db)):
+    if merchant not in db.merchant_names(conn, user).values():
+        raise HTTPException(404, "Unknown merchant")
+    db.set_tracked(conn, user, merchant, on)
     return _render_merchants(request, user, conn, filter)
 
 

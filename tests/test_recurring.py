@@ -136,3 +136,16 @@ def test_a_utility_bill_with_a_few_similar_months_is_still_a_variable_bill():
     amounts = [5512, 14230, 7870, 13011, 6640, 14390, 5980, 9020, 11800, 10120, 12088, 11540, 10930, 12500]
     [sub] = detect({"CITY POWER": monthly(date(2025, 9, 8), amounts)})
     assert sub.variable
+
+
+def test_a_merchant_the_person_tracks_is_listed_even_when_the_charges_dont_show_it():
+    charges = [Charge(date(2026, 1, 3), 1200), Charge(date(2026, 2, 9), 1350)]
+    assert detect({"BARBER": charges}) == []
+    [sub] = detect({"BARBER": charges}, tracked={"BARBER"})
+    assert sub.cadence == "monthly"
+    assert sub.latest_cents == 1350
+
+
+def test_tracking_a_detected_merchant_changes_nothing():
+    charges = monthly(date(2026, 1, 15), [1549] * 6)
+    assert detect({"STREAMFLIX": charges}, tracked={"STREAMFLIX"}) == detect({"STREAMFLIX": charges})

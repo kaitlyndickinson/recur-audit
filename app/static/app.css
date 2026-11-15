@@ -534,7 +534,7 @@ button, select, input { font: inherit; color: inherit; }
 .inline-input:hover { border-color: var(--line); }
 .inline-input:focus { border-color: var(--accent); background: var(--page); outline: none; }
 .example { grid-row: 2; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.merchant-row .category { grid-row: 3; justify-self: start; margin-top: 4px; }
+.merchant-actions { grid-row: 3; grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 4px; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .filter-chips a {
   padding: 7px 14px;

@@ -101,7 +101,8 @@ class Subscription:
         return (today - self.last_charged).days > self.period_days * STOPPED_AFTER_PERIODS
 
 
-def detect(charges_by_merchant: dict[str, list[Charge]]) -> list[Subscription]:
+def detect(charges_by_merchant: dict[str, list[Charge]], tracked: set[str] = frozenset()) -> list[Subscription]:
+    """Find recurring charges; merchants in `tracked` are listed even when their charges don't show it."""
     subscriptions = []
     for merchant, charges in charges_by_merchant.items():
         charges = sorted(charges, key=lambda charge: charge.posted_on)
@@ -109,13 +110,24 @@ def detect(charges_by_merchant: dict[str, list[Charge]]) -> list[Subscription]:
         if found:
             subscriptions.append(found)
             continue
-        plans = _plans(charges)
-        if len(plans) > 1:
-            for plan in plans:
+        plans = []
+        if len(_plans(charges)) > 1:
+            for plan in _plans(charges):
                 found = _subscription(merchant, plan, plan_cents=round(median(c.amount_cents for c in plan)))
                 if found:
-                    subscriptions.append(found)
+                    plans.append(found)
+        if not plans and merchant in tracked:
+            plans.append(_tracked(merchant, charges))
+        subscriptions.extend(plans)
     return sorted(subscriptions, key=lambda sub: -sub.yearly_cents)
+
+
+def _tracked(merchant: str, charges: list[Charge]) -> Subscription:
+    """A subscription the person added by hand, billed on whichever cadence is closest to its typical gap."""
+    gaps = [(b.posted_on - a.posted_on).days for a, b in zip(charges, charges[1:])]
+    typical_gap = median(gaps) if gaps else CADENCES["monthly"]
+    cadence = min(CADENCES, key=lambda name: abs(typical_gap - CADENCES[name]) / CADENCES[name])
+    return Subscription(merchant, cadence, charges, variable=len(charges) > 1 and not _amounts_are_stable(charges))
 
 
 def _subscription(merchant: str, charges: list[Charge], plan_cents: int | None = None) -> Subscription | None:

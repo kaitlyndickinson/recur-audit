@@ -13,7 +13,7 @@ It's local first. It runs on your own computer, everything lives in one SQLite f
 ## Features
 
 - Import statements as CSV, OFX or QFX, several at a time. Rows repeated across overlapping statements are skipped.
-- Detect recurring charges, with cost, price increases and charges that stopped. Filter by period and account.
+- Detect recurring charges, with cost, price increases and charges that stopped. Filter by period and account. Add anything it misses by hand.
 - Rename and merge merchants, and sort them into categories. A language model you host can suggest the categories.
 - Scan the last 1, 3 or 12 months of a Gmail inbox's headers, and sort each sender into move to your new address, unsubscribe & trash, spam or keep. Senders billing you on repeat are grouped at the top. Clean up does the rest in one step; message bodies are never read.
 
