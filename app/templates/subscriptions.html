@@ -85,9 +85,9 @@
         {% for sub in subs %}
           <li class="sub-row">
             <a class="sub-main" href="/merchant?name={{ sub.merchant | urlencode }}">
-              <span class="sub-name">{{ sub.merchant }}</span>
+              <span class="sub-name">{{ sub.name }}</span>
               <span class="sub-meta">
-                {{ sub.accounts | join(", ") }} · {{ sub.cadence | capitalize }} · {{ sub.latest_cents | money }}
+                {{ sub.accounts | join(", ") }} · {{ sub.cadence | capitalize }} · {% if sub.variable %}varies, last {% endif %}{{ sub.latest_cents | money }}
                 {% if sub.is_stopped(today) %}
                   · <span class="badge quiet">No charge since {{ sub.last_charged | day }}</span>
                 {% else %}
@@ -99,19 +99,19 @@
               </span>
             </a>
             <span class="sub-amount">
-              <span class="amount" title="Spent {{ periods[period][1] }}">{{ spent[sub.merchant] | money }}</span>
+              <span class="amount" title="Spent {{ periods[period][1] }}">{{ spent[sub.name] | money }}</span>
               <span class="muted">{{ sub.yearly_cents | money_short }}/yr</span>
             </span>
             <div class="sub-actions">
               {% if status == "review" %}
                 {% for value, text in [("keep", "Keep"), ("cancel", "Cancel"), ("not_subscription", "Not a subscription")] %}
-                  <button class="chip" hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "status": "{{ value }}", "period": "{{ period }}", "account": {{ account | tojson }}}'
+                  <button class="chip" hx-post="/status" hx-vals='{"merchant": {{ sub.name | tojson }}, "status": "{{ value }}", "period": "{{ period }}", "account": {{ account | tojson }}}'
                           hx-target="#subs" hx-select="#subs" hx-swap="outerHTML">{{ text }}</button>
                 {% endfor %}
               {% else %}
-                <label class="visually-hidden" for="status-{{ loop.index }}-{{ status }}">Status for {{ sub.merchant }}</label>
+                <label class="visually-hidden" for="status-{{ loop.index }}-{{ status }}">Status for {{ sub.name }}</label>
                 <select class="chip select" id="status-{{ loop.index }}-{{ status }}" name="status"
-                        hx-post="/status" hx-vals='{"merchant": {{ sub.merchant | tojson }}, "period": "{{ period }}", "account": {{ account | tojson }}}'
+                        hx-post="/status" hx-vals='{"merchant": {{ sub.name | tojson }}, "period": "{{ period }}", "account": {{ account | tojson }}}'
                         hx-target="#subs" hx-select="#subs" hx-swap="outerHTML">
                   {% for value, text in statuses.items() %}
                     <option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ text }}</option>

@@ -77,6 +77,13 @@ CREATE TABLE IF NOT EXISTS mail_settings (
     new_address TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS merchant_categories (
+    owner TEXT NOT NULL,
+    merchant TEXT NOT NULL,
+    category TEXT NOT NULL,
+    PRIMARY KEY (owner, merchant)
+);
+
 CREATE TABLE IF NOT EXISTS subscription_marks (
     owner TEXT NOT NULL,
     merchant TEXT NOT NULL,
@@ -224,12 +231,36 @@ def rename_merchant(conn, owner, key, new_name) -> None:
                ON CONFLICT (owner, merchant_key) DO UPDATE SET display_name = excluded.display_name""",
             (owner, key, new_name),
         )
-    # Carry the keep/cancel decision over to the new name unless that group already has one.
+    # Carry the keep/cancel decision and category over to the new name unless that group already has them.
     conn.execute(
         """INSERT OR IGNORE INTO subscription_marks (owner, merchant, status)
            SELECT owner, ?, status FROM subscription_marks WHERE owner = ? AND merchant = ?""",
         (new_name, owner, old_name),
     )
+    conn.execute(
+        """INSERT OR IGNORE INTO merchant_categories (owner, merchant, category)
+           SELECT owner, ?, category FROM merchant_categories WHERE owner = ? AND merchant = ?""",
+        (new_name, owner, old_name),
+    )
+    conn.commit()
+
+
+def categories(conn, owner) -> dict[str, str]:
+    return dict(conn.execute(
+        "SELECT merchant, category FROM merchant_categories WHERE owner = ?", (owner,)).fetchall())
+
+
+def set_categories(conn, owner, chosen: dict[str, str]) -> None:
+    """Set each merchant's category; an empty category clears it."""
+    for merchant, category in chosen.items():
+        if category:
+            conn.execute(
+                """INSERT INTO merchant_categories (owner, merchant, category) VALUES (?, ?, ?)
+                   ON CONFLICT (owner, merchant) DO UPDATE SET category = excluded.category""",
+                (owner, merchant, category),
+            )
+        else:
+            conn.execute("DELETE FROM merchant_categories WHERE owner = ? AND merchant = ?", (owner, merchant))
     conn.commit()
 
 

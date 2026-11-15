@@ -20,7 +20,11 @@ Uploaded files are stored byte-for-byte at `data/raw/<sha256>.<ext>`; cleaning h
 
 ## Merchants and subscriptions
 
-`merchants.merchant_key()` cleans bank descriptions; renames on the Merchants page override it, and giving two keys one name merges them. Subscription detection is plain math with thresholds as constants in `app/recurring.py`: 3+ charges, regular gaps (weekly to yearly, ±20%), stable amounts (75% within 25%). No AI sees transaction data.
+`merchants.merchant_key()` cleans bank descriptions; renames on the Merchants page override it, and giving two keys one name merges them. Subscription detection is plain math with thresholds as constants in `app/recurring.py`: 3+ charges, regular gaps (weekly to yearly, ±20%), stable amounts (75% within 25%). It judges the latest regular run of charges, as long as that's a third of them, so a move or plan change doesn't hide a subscription. A merchant that bills several plans under one name (Apple, Google Play) is split by price and each plan is checked on its own. Monthly-or-longer charges that are regular 6+ times but change in amount, like a card autopay, count as variable bills. No AI is involved in detection.
+
+## Categories
+
+Each merchant name has one of a fixed list of categories (`app/categories.py`), set on the Merchants page. Suggest categories asks a language model you host yourself (any OpenAI-compatible server, set by `RECUR_AUDIT_LLM_URL`) to fill in the uncategorized ones; it only runs when you click it. The model sees each merchant's name and one bank description, never amounts, dates or accounts, and answers outside the list are dropped. The URL must be a server you run, never a hosted AI service. In the container, reaching a model on the host's `127.0.0.1` needs Podman's `pasta:--map-host-loopback` network option, which also lets the app reach the host's other local services.
 
 ## Email cleanup
 

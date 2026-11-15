@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app import charts, db, gmail, mail
+from app import categories, charts, db, gmail, mail
 from app.importer import UnreadableExport, parse
 from app.recurring import detect, monthly_totals
 
@@ -120,15 +120,15 @@ def _render_subscriptions(request, user, conn, period, account):
         account = ""
     subs = detect(db.spending_by_merchant(conn, user, account or None))
     marks = db.marks(conn, user)
-    tracked = [s for s in subs if marks.get(s.merchant) != "not_subscription"]
+    tracked = [s for s in subs if marks.get(s.name) != "not_subscription"]
     months = _last_months(today, _month_count(period, today, tracked))
-    spent = {s.merchant: sum(c.amount_cents for c in s.charges if c.posted_on >= months[0]) for s in subs}
+    spent = {s.name: sum(c.amount_cents for c in s.charges if c.posted_on >= months[0]) for s in subs}
 
     sections = {status: [] for status in STATUSES}
     for sub in subs:
-        if spent[sub.merchant]:
-            sections[marks.get(sub.merchant, "review")].append(sub)
-    counted = [s for s in tracked if spent[s.merchant]]
+        if spent[sub.name]:
+            sections[marks.get(sub.name, "review")].append(sub)
+    counted = [s for s in tracked if spent[s.name]]
     totals = monthly_totals(tracked, months)
     heights, ticks = charts.scale(totals)
     return templates.TemplateResponse(request, "subscriptions.html", {
@@ -145,8 +145,8 @@ def _render_subscriptions(request, user, conn, period, account):
         "monthly_average_cents": sum(totals) // len(months),
         "counted": len(counted),
         # What cancelling saves from here on, so it doesn't depend on the period being viewed.
-        "savings_cents": sum(s.yearly_cents for s in subs if marks.get(s.merchant) == "cancel"),
-        "increases": [s for s in counted if s.price_change and marks.get(s.merchant) != "cancelled"],
+        "savings_cents": sum(s.yearly_cents for s in subs if marks.get(s.name) == "cancel"),
+        "increases": [s for s in counted if s.price_change and marks.get(s.name) != "cancelled"],
         "chart": {"bars": list(zip(months, totals, heights)), "ticks": ticks},
         "periods": PERIODS,
         "period": period,
@@ -177,14 +177,14 @@ def merchant_detail(request: Request, name: str, user=Depends(current_user), con
     if not transactions:
         raise HTTPException(404, "No charges for that merchant")
     charges = sorted(db.spending_by_merchant(conn, user).get(name, []), key=lambda c: c.posted_on)
-    sub = next(iter(detect({name: charges})), None)
+    marks = db.marks(conn, user)
+    subs = [(sub, marks.get(sub.name, "review")) for sub in detect({name: charges})]
     heights, ticks = charts.scale([c.amount_cents for c in charges])
     xs, path = charts.step_path(heights)
     return templates.TemplateResponse(request, "merchant.html", {
         "user": user,
         "name": name,
-        "sub": sub,
-        "status": db.marks(conn, user).get(name, "review"),
+        "subs": subs,
         "statuses": STATUSES,
         "today": date.today(),
         "transactions": transactions,
@@ -260,19 +260,60 @@ def delete_import(request: Request, import_id: int = Form(), user=Depends(curren
 
 
 @app.get("/merchants", response_class=HTMLResponse)
-def merchants(request: Request, user=Depends(current_user), conn=Depends(get_db)):
+def merchants(request: Request, category: str = "", user=Depends(current_user), conn=Depends(get_db)):
+    return _render_merchants(request, user, conn, category)
+
+
+def _render_merchants(request, user, conn, category="", error=None):
+    """`category` filters the list: one of CATEGORIES, "none" for uncategorized, or empty for all."""
     rows = db.merchant_summary(conn, user)
+    chosen = db.categories(conn, user)
+    counts = {name: sum(chosen.get(r["name"]) == name for r in rows) for name in categories.CATEGORIES}
+    counts["none"] = sum(r["name"] not in chosen for r in rows)
+    if category not in counts:
+        category = ""
+    if category:
+        rows = [r for r in rows if chosen.get(r["name"], "none") == category]
     return templates.TemplateResponse(request, "merchants.html", {
-        "user": user, "merchants": rows, "names": sorted({r["name"] for r in rows})})
+        "user": user, "merchants": rows, "chosen": chosen, "categories": categories.CATEGORIES,
+        "counts": counts, "category": category, "can_suggest": categories.configured(), "error": error})
 
 
 @app.post("/merchants/rename", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
-def rename(request: Request, key: str = Form(), name: str = Form(""),
+def rename(request: Request, key: str = Form(), name: str = Form(""), filter: str = Form(""),
            user=Depends(current_user), conn=Depends(get_db)):
     if key not in db.merchant_names(conn, user):
         raise HTTPException(404, "Unknown merchant")
     db.rename_merchant(conn, user, key, name)
-    return merchants(request, user, conn)
+    return _render_merchants(request, user, conn, filter)
+
+
+@app.post("/merchants/category", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
+def set_category(request: Request, merchant: str = Form(), category: str = Form(""), filter: str = Form(""),
+                 user=Depends(current_user), conn=Depends(get_db)):
+    if category and category not in categories.CATEGORIES:
+        raise HTTPException(400, "Unknown category")
+    if merchant not in db.merchant_names(conn, user).values():
+        raise HTTPException(404, "Unknown merchant")
+    db.set_categories(conn, user, {merchant: category})
+    return _render_merchants(request, user, conn, filter)
+
+
+@app.post("/merchants/suggest", response_class=HTMLResponse, dependencies=[Depends(htmx_only)])
+def suggest_categories(request: Request, filter: str = Form(""), user=Depends(current_user), conn=Depends(get_db)):
+    if not categories.configured():
+        raise HTTPException(400, "No model is set up on this server.")
+    chosen = db.categories(conn, user)
+    todo = {}
+    for row in db.merchant_summary(conn, user):
+        if row["name"] not in chosen:
+            todo.setdefault(row["name"], row["example"])
+    try:
+        db.set_categories(conn, user, categories.suggest(list(todo.items())))
+    except categories.ModelUnavailable as error:
+        log.warning("category suggestions failed: %s", error)
+        return _render_merchants(request, user, conn, filter, error="Couldn’t reach the model. Is it running?")
+    return _render_merchants(request, user, conn, filter)
 
 
 # ---------- Email cleanup ----------

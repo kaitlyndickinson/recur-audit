@@ -5,25 +5,27 @@
 <section class="detail-head">
   <div>
     <h1>{{ name }}</h1>
-    {% if sub %}
-      <p class="muted">
-        {{ sub.cadence | capitalize }} · {{ sub.latest_cents | money }} · {{ sub.yearly_cents | money_short }}/yr
-        {% if sub.is_stopped(today) %}<br>No charge since {{ sub.last_charged | day }}{% endif %}
-      </p>
-    {% else %}
-      <p class="muted">Not detected as recurring.</p>
-    {% endif %}
+    {% if not subs %}<p class="muted">Not detected as recurring.</p>{% endif %}
   </div>
-  {% if sub %}{% include "_status_picker.html" %}{% endif %}
 </section>
+{% for sub, status in subs %}
+  <section class="detail-head">
+    <p class="muted">
+      {% if subs | length > 1 %}{{ sub.name }}<br>{% endif %}
+      {{ sub.cadence | capitalize }} · {% if sub.variable %}varies, last {% endif %}{{ sub.latest_cents | money }} · {{ sub.yearly_cents | money_short }}/yr
+      {% if sub.is_stopped(today) %}<br>No charge since {{ sub.last_charged | day }}{% endif %}
+    </p>
+    {% with name = sub.name %}{% include "_status_picker.html" %}{% endwith %}
+  </section>
+{% endfor %}
 
 {% if chart.points | length > 1 %}
 <figure class="card chart">
   <figcaption>
     <span>Amount charged</span>
-    {% if sub and sub.price_change %}
+    {% for sub, status in subs if sub.price_change %}
       <span class="badge up"><svg aria-hidden="true" viewBox="0 0 10 10"><path d="M5 1.5 9 8.5H1z"/></svg>{{ sub.price_change[0] | money }} → {{ sub.price_change[1] | money }}</span>
-    {% endif %}
+    {% endfor %}
   </figcaption>
   <div class="line-chart" role="img" aria-label="Amount of each charge over time; values are in the table below">
     {% for pct, cents in chart.ticks %}

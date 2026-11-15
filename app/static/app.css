@@ -117,21 +117,11 @@ a:hover { text-decoration: underline; }
 }
 .narrow { max-width: 520px; }
 
-/* On phones the section tabs move to a bottom bar, where thumbs are. */
+/* On phones the section tabs get their own row under the brand. */
 @media (max-width: 640px) {
-  /* backdrop-filter would make the header the containing block for the fixed tab bar. */
-  .topbar { gap: 12px; backdrop-filter: none; background: var(--page); }
-  .tabs {
-    position: fixed;
-    inset: auto 0 0 0;
-    justify-content: space-around;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-    backdrop-filter: saturate(1.4) blur(12px);
-    border-top: 1px solid var(--line);
-  }
-  .tabs a { flex: 1; text-align: center; padding: 8px 4px; font-size: 0.9rem; }
-  .page { padding-bottom: 96px; }
+  .topbar { flex-wrap: wrap; row-gap: 8px; padding-bottom: 8px; }
+  .tabs { order: 3; width: 100%; justify-content: space-between; }
+  .tabs a { flex: 1; text-align: center; padding: 6px 4px; font-size: 0.9rem; }
 }
 
 .card {
@@ -544,6 +534,21 @@ button, select, input { font: inherit; color: inherit; }
 .inline-input:hover { border-color: var(--line); }
 .inline-input:focus { border-color: var(--accent); background: var(--page); outline: none; }
 .example { grid-row: 2; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.merchant-row .category { grid-row: 3; justify-self: start; margin-top: 4px; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.filter-chips a {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.filter-chips a:hover { border-color: var(--accent); color: var(--ink); text-decoration: none; }
+.filter-chips a span { margin-left: 4px; color: var(--muted); font: 0.75rem var(--mono); }
+.filter-chips a[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.filter-chips a[aria-current="true"] span { color: inherit; opacity: 0.75; }
+.merchant-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; }
 .merchant-stats { grid-row: 1 / span 2; grid-column: 2; display: flex; flex-direction: column; align-items: flex-end; font-size: 0.75rem; }
 
 .empty { padding: 48px 8px; text-align: center; }

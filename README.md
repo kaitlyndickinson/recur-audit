@@ -13,7 +13,7 @@ It's local first. It runs on your own computer, everything lives in one SQLite f
 
 - Import statements as CSV, OFX or QFX, several at a time. Rows repeated across overlapping statements are skipped.
 - Detect recurring charges, with cost, price increases and charges that stopped. Filter by period and account.
-- Rename and merge merchants.
+- Rename and merge merchants, and sort them into categories. A language model you host can suggest the categories.
 - Scan the last 1, 3 or 12 months of a Gmail inbox's headers, and sort each sender into move to your new address, unsubscribe & trash, spam or keep. Senders billing you on repeat are grouped at the top. Clean up does the rest in one step; message bodies are never read.
 
 ## Run it
@@ -31,7 +31,7 @@ tailscale serve --bg --https=8443 http://127.0.0.1:8000
 
 Open `https://<machine>.<tailnet>.ts.net:8443`. Tailscale tells the app who each person is, so everyone needs their own Tailscale user. Use `serve`, never `funnel`, which would put the app on the public internet.
 
-- Update: `git pull && docker compose up -d --build`
+- Update: `git pull && docker compose up -d --build --force-recreate` (Podman keeps the old container without it)
 - Logs: `docker compose logs -f`
 - Back up: `docker compose cp app:/data ./backup`
 
@@ -57,6 +57,23 @@ How access works:
 - **Disconnect** revokes everything and deletes what the scan stored.
 
 Google warns the app is unverified when you connect. That's expected, since it's your own app; continue past it. Sign-ins last 7 days while the app is in testing. Clean up really unsubscribes and moves mail to Trash or Spam, so try it on a throwaway address first.
+
+## Category suggestions (optional)
+
+Suggest categories on the Merchants page asks a language model you host, such as llama.cpp's `llama-server`. It only sees merchant names and one bank description each. Add its OpenAI-compatible address to `.env`:
+
+```sh
+RECUR_AUDIT_LLM_URL=http://169.254.1.2:8081/v1
+RECUR_AUDIT_LLM_MODEL=qwen3.6-35b
+```
+
+If the model listens on the host's `127.0.0.1`, with Podman, add a `compose.override.yaml` (gitignored) so the container can reach it at `169.254.1.2`:
+
+```yaml
+services:
+  app:
+    network_mode: "pasta:--map-host-loopback,169.254.1.2"
+```
 
 ## Development
 

@@ -4,22 +4,47 @@
 <section id="merchants">
   <h1>Merchants</h1>
   <p class="muted">Bank descriptions are cleaned up automatically. Rename any that look wrong. Give two the same name to merge them, or clear a name to undo.</p>
+  {% macro filter_url(value) %}/merchants{% if value %}?category={{ value | urlencode }}{% endif %}{% endmacro %}
 
-  {% if not merchants %}
+  {% if not merchants and not category %}
     <p class="empty muted">Nothing imported yet.</p>
   {% else %}
-  <datalist id="merchant-names">
-    {% for name in names %}<option value="{{ name }}">{% endfor %}
-  </datalist>
+  <div class="merchant-tools">
+    <nav class="filter-chips" aria-label="Category">
+      <a href="{{ filter_url('') }}" {% if not category %}aria-current="true"{% endif %}>All</a>
+      {% for name in categories if counts[name] %}
+        <a href="{{ filter_url(name) }}" {% if category == name %}aria-current="true"{% endif %}>{{ name }} <span>{{ counts[name] }}</span></a>
+      {% endfor %}
+      {% if counts.none %}<a href="{{ filter_url('none') }}" {% if category == "none" %}aria-current="true"{% endif %}>Uncategorized <span>{{ counts.none }}</span></a>{% endif %}
+    </nav>
+    {% if can_suggest and counts.none %}
+      <button class="button" hx-post="/merchants/suggest" hx-vals='{"filter": {{ category | tojson }}}'
+              hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
+        <span class="idle">Suggest categories</span><span class="busy">Asking the model…</span>
+      </button>
+    {% endif %}
+  </div>
+  {% if error %}<div class="notice error"><p>{{ error }}</p></div>{% endif %}
+  {% if not merchants %}
+    <p class="empty muted">No merchants in this category.</p>
+  {% else %}
   <ul class="list card">
     {% for m in merchants %}
       <li class="merchant-row">
         <form hx-post="/merchants/rename" hx-trigger="change" hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
           <input type="hidden" name="key" value="{{ m.merchant_key }}">
+          <input type="hidden" name="filter" value="{{ category }}">
           <label class="visually-hidden" for="m-{{ loop.index }}">Name for {{ m.example }}</label>
-          <input class="inline-input" id="m-{{ loop.index }}" name="name" value="{{ m.name }}" list="merchant-names" autocomplete="off">
+          <input class="inline-input" id="m-{{ loop.index }}" name="name" value="{{ m.name }}" autocomplete="off">
         </form>
         <span class="muted example" title="{{ m.example }}">{{ m.example }}</span>
+        <label class="visually-hidden" for="c-{{ loop.index }}">Category for {{ m.name }}</label>
+        <select class="chip select category" id="c-{{ loop.index }}" name="category"
+                hx-post="/merchants/category" hx-vals='{"merchant": {{ m.name | tojson }}, "filter": {{ category | tojson }}}'
+                hx-target="#merchants" hx-select="#merchants" hx-swap="outerHTML">
+          <option value="">No category</option>
+          {% for name in categories %}<option {% if chosen.get(m.name) == name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
         <span class="merchant-stats">
           <span class="amount">{{ m.spent_cents | money }}</span>
           <span class="muted">{{ m.charges }} charge{{ "" if m.charges == 1 else "s" }}</span>
@@ -27,6 +52,7 @@
       </li>
     {% endfor %}
   </ul>
+  {% endif %}
   {% endif %}
 </section>
 {% endblock %}

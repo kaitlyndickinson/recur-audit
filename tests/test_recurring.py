@@ -80,3 +80,42 @@ def test_variable_bill_is_not_reported_as_a_price_change():
 def test_price_change_from_over_a_year_ago_is_not_flagged():
     [sub] = detect({"GYMCO": monthly(date(2024, 1, 1), [4000] * 3 + [4900] * 16)})
     assert sub.price_change is None
+
+
+def test_subscription_is_still_found_after_a_move_changed_the_bill():
+    # Old plan, a prorated final bill, a first bill with an install fee, then the new plan.
+    before = monthly(date(2025, 1, 10), [5000] * 6)
+    move = [Charge(date(2025, 7, 3), 2600), Charge(date(2025, 7, 22), 14200)]
+    after = monthly(date(2025, 8, 22), [9500] * 8)
+    [sub] = detect({"CABLECO": before + move + after})
+    assert sub.cadence == "monthly"
+    assert sub.latest_cents == 9500
+    assert len(sub.charges) == 16
+
+
+def test_a_few_regular_charges_after_many_random_ones_are_not_a_subscription():
+    days = [0, 3, 11, 12, 30, 33, 47, 60, 61, 75, 90, 98, 130, 160, 190]
+    amounts = [4210, 1875, 6230, 980, 3311, 5120, 2290, 4410, 760, 3890, 5555, 2101, 3000, 3020, 2990]
+    charges = [Charge(date(2026, 1, 1) + timedelta(days=d), a) for d, a in zip(days, amounts)]
+    assert detect({"GROCER": charges}) == []
+
+
+def test_plans_billed_under_one_name_are_found_separately():
+    charges = monthly(date(2026, 1, 3), [999] * 6) + monthly(date(2026, 1, 19), [299] * 6)
+    subs = detect({"APPLE": charges})
+    assert {(sub.merchant, sub.name, sub.latest_cents) for sub in subs} == {
+        ("APPLE", "APPLE · $9.99", 999), ("APPLE", "APPLE · $2.99", 299)}
+
+
+def test_a_regular_bill_with_changing_amounts_is_a_variable_bill():
+    [sub] = detect({"CARD AUTOPAY": monthly(date(2025, 1, 25), [41233, 18710, 99502, 26045, 53390, 12001, 70412])})
+    assert sub.variable
+    assert sub.cadence == "monthly"
+    assert sub.price_change is None
+    assert sub.name == "CARD AUTOPAY"
+
+
+def test_weekly_shopping_with_changing_amounts_is_not_a_bill():
+    charges = [Charge(date(2026, 1, 3) + timedelta(weeks=w), a)
+               for w, a in enumerate([8211, 4520, 12090, 6310, 9930, 3870, 10450, 5120])]
+    assert detect({"GROCER": charges}) == []

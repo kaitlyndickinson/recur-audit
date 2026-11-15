@@ -284,3 +284,20 @@ def test_settings_load_from_a_env_file_without_overriding_the_shell(tmp_path, mo
     assert os.environ["RECUR_AUDIT_TEST_B"] == "quoted value"
     assert os.environ["RECUR_AUDIT_TEST_C"] == "shell"
     assert os.environ["RECUR_AUDIT_TEST_D"] == "http://localhost:8000"
+
+
+def test_plans_billed_under_one_name_are_listed_and_marked_separately(client):
+    days = months_back(11)
+    lines = ["Date,Description,Amount"]
+    lines += [f"{days[m]},APPLE.COM/BILL 866-555-0100 CA,-9.99" for m in range(6)]
+    lines += [f"{days[m] + timedelta(days=9)},APPLE.COM/BILL 866-555-0100 CA,-2.99" for m in range(6)]
+    upload(client, ("\n".join(lines) + "\n").encode())
+
+    home = client.get("/", headers=ME).text
+    assert "Apple · $9.99" in home and "Apple · $2.99" in home
+    assert "/merchant?name=Apple" in home
+    page = visible_text(client.post("/status", headers={**ME, **HTMX},
+                                    data={"merchant": "Apple · $2.99", "status": "cancel"}).text)
+    assert "To cancel 1" in page
+    detail = client.get("/merchant", params={"name": "Apple"}, headers=ME).text
+    assert "Apple · $9.99" in detail and "Apple · $2.99" in detail
