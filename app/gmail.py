@@ -172,7 +172,7 @@ class Gmail:
             log.warning("Gmail answered %s (%s); retrying in %ss", response.status_code, _explanation(response), wait)
             time.sleep(wait)
         if response.is_error:
-            raise GoogleError(_explanation(response))
+            raise GoogleError(f"{_explanation(response)} ({method} {url.removeprefix(API + '/')})")
         return response.json() if response.content else {}
 
 

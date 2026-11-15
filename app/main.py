@@ -288,7 +288,7 @@ def start_thread(work) -> None:
 def run_job(owner: str, kind: str, work) -> None:
     if owner in JOBS and not JOBS[owner]["finished"]:
         raise HTTPException(409, "Still working on the last request.")
-    job = JOBS[owner] = {"kind": kind, "done": 0, "total": 0, "error": None, "finished": False}
+    job = JOBS[owner] = {"kind": kind, "done": 0, "total": 0, "error": None, "failures": [], "finished": False}
 
     def progress(done, total):
         job["done"], job["total"] = done, total
@@ -296,7 +296,7 @@ def run_job(owner: str, kind: str, work) -> None:
     def run():
         conn = db.connect(data_dir() / "recur-audit.db")
         try:
-            work(conn, progress)
+            job["failures"] = work(conn, progress) or []
         except gmail.SignInExpired:
             db.delete_mail_account(conn, owner)
             job["error"] = "Google ended the sign-in. Connect again to continue."
@@ -338,6 +338,7 @@ def email(request: Request, user=Depends(current_user), conn=Depends(get_db)):
         "account": db.mail_account(conn, user),
         "job": job if job and not job["finished"] else None,
         "error": job["error"] if job else None,
+        "failures": job["failures"] if job and job["finished"] else [],
         "new_address": new_address,
         "actions": {**mail.ACTIONS, **({"move": f"Move to {new_address}"} if new_address else {})},
         "grouped": grouped,
@@ -458,11 +459,18 @@ def start_clean(user: str, access_token: str) -> None:
     def work(conn, progress):
         todo = [s for s in db.mail_senders(conn, user) if s["action"] in CLEAN_UP and not s["result"]]
         progress(0, len(todo))
+        failures = []
         with gmail.http() as client:
             box = gmail.Gmail(client, access_token)
             for done, sender in enumerate(todo, start=1):
-                db.set_sender_result(conn, user, sender["address"], clean_up_sender(box, sender))
+                # One sender Gmail refuses shouldn't stop the rest. It keeps no result, so the next run retries it.
+                try:
+                    db.set_sender_result(conn, user, sender["address"], clean_up_sender(box, sender))
+                except gmail.GoogleError as error:
+                    log.warning("clean up of %s failed: %s", sender["address"], error)
+                    failures.append(f"{sender['address']}: {error}")
                 progress(done, len(todo))
+        return failures
 
     run_job(user, "clean", work)
 

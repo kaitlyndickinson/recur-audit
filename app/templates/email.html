@@ -14,6 +14,13 @@
   {% if error %}
     <div class="notice error"><strong>Couldn’t finish</strong><p>{{ error }}</p></div>
   {% endif %}
+  {% if failures %}
+    <div class="notice error">
+      <strong>{{ failures | length }} sender{{ "" if failures | length == 1 else "s" }} couldn’t be cleaned up</strong>
+      <ul class="facts">{% for failure in failures %}<li>{{ failure }}</li>{% endfor %}</ul>
+      <p>The rest went through. These are still waiting; run Clean up again to retry them.</p>
+    </div>
+  {% endif %}
 
   {% if not configured %}
     <div class="card panel">
@@ -112,8 +119,9 @@
                     <button class="chip" hx-post="/email/done" hx-vals='{"address": {{ sender.address | tojson }}, "done": true}'
                             hx-target="#email" hx-select="#email" hx-swap="outerHTML">Done</button>
                   {% endif %}
-                  <label class="visually-hidden" for="action-{{ loop.index }}-{{ action }}">Action for {{ sender.address }}</label>
-                  <select class="chip select" id="action-{{ loop.index }}-{{ action }}" name="action"
+                  {# The id includes the action, so after a change htmx doesn't hand focus to whichever row now has the old id. #}
+                  <label class="visually-hidden" for="action-{{ action }}-{{ sender.address }}">Action for {{ sender.address }}</label>
+                  <select class="chip select" id="action-{{ action }}-{{ sender.address }}" name="action"
                           hx-post="/email/action" hx-vals='{"address": {{ sender.address | tojson }}}'
                           hx-target="#email" hx-select="#email" hx-swap="outerHTML">
                     {% for value, text in actions.items() %}
@@ -147,4 +155,11 @@
     {% endif %}
   {% endif %}
 </section>
+<script>
+  // Every change redraws the whole list, and the browser jumps when the control you used is replaced.
+  // Keep the page where it was.
+  let emailScrollY = 0;
+  document.body.addEventListener("htmx:beforeSwap", () => { emailScrollY = window.scrollY; });
+  document.body.addEventListener("htmx:afterSwap", () => window.scrollTo(0, emailScrollY));
+</script>
 {% endblock %}

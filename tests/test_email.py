@@ -49,12 +49,12 @@ class FakeGoogle:
         self.spammed: list[str] = []
         self.unsubscribed: list[str] = []
         self.sign_in_valid = True
-        self.gmail_errors: list[httpx.Response] = []  # returned, in order, by the next Gmail API calls
+        self.gmail_errors: list[httpx.Response] = []  # returned, in order, by the next Gmail message calls
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         url, path = str(request.url), request.url.path
-        if url.startswith(gmail.API) and self.gmail_errors:
+        if url.startswith(gmail.API + "/messages") and self.gmail_errors:
             return self.gmail_errors.pop(0)
         token = request.headers.get("authorization", "").removeprefix("Bearer ")
         if url.startswith(gmail.TOKEN_URL):
@@ -392,3 +392,13 @@ def test_dollar_senders_come_first_in_each_section(client):
     client.post("/email/action", headers={**ME, **HTMX}, data={"address": "x@junk.example", "action": "move"})
     rows = section(client.get("/email", headers=ME).text, "Move to new address")
     assert rows.index("billing@cloudly.example") < rows.index("x@junk.example")  # 2 emails with $ before 3 without
+
+
+def test_a_sender_google_refuses_does_not_stop_the_others(client, google):
+    scanned(client)  # clean-up order: junk (spam), then shop and sneaky (unsubscribe & trash)
+    google.gmail_errors = [google_error(400, "failedPrecondition", "Precondition check failed.")]  # junk's first call
+    clean(client)
+    assert sorted(google.trashed) == ["m1", "m2", "m7"]  # shop and sneaky still cleaned up
+    page = " ".join(re.sub(r"<[^>]+>", " ", client.get("/email", headers=ME).text).split())
+    assert "x@junk.example: Precondition check failed." in page
+    assert "Clean up 1 sender" in page  # junk is still pending, so the next run retries it
